@@ -1,0 +1,218 @@
+[
+  {
+    "person_id": "6b45751b-5573-4854-aba7-6b9105da4368",
+    "name": "Christopher Nolan",
+    "role_type": "director",
+    "primary_genre": "Sci-Fi",
+    "avg_roi_multiplier": 3.8,
+    "box_office_power_score": 92.0,
+    "avg_worldwide_gross": 342000000
+  },
+  {
+    "person_id": "177fa312-307c-4c0b-91ac-cdb43976dfdc",
+    "name": "Denis Villeneuve",
+    "role_type": "director",
+    "primary_genre": "Sci-Fi",
+    "avg_roi_multiplier": 3.2,
+    "box_office_power_score": 88.0,
+    "avg_worldwide_gross": 288000000
+  },
+  {
+    "person_id": "61ce30fc-fc19-4322-acb0-ff8441c7ec3f",
+    "name": "James Cameron",
+    "role_type": "director",
+    "primary_genre": "Sci-Fi",
+    "avg_roi_multiplier": 4.5,
+    "box_office_power_score": 95.0,
+    "avg_worldwide_gross": 405000000
+  },
+  {
+    "person_id": "7f3343c2-42fd-4b45-83ed-727104d3d754",
+    "name": "Steven Spielberg",
+    "role_type": "director",
+    "primary_genre": "Adventure",
+    "avg_roi_multiplier": 3.6,
+    "box_office_power_score": 91.0,
+    "avg_worldwide_gross": 324000000
+  },
+  {
+    "person_id": "fe4e6e1b-87d3-4c2c-b68f-6d4465fc4fc2",
+    "name": "Greta Gerwig",
+    "role_type": "director",
+    "primary_genre": "Drama",
+    "avg_roi_multiplier": 4.1,
+    "box_office_power_score": 89.0,
+    "avg_worldwide_gross": 368999999
+  },
+  {
+    "person_id": "ea1b8973-33e7-4293-a1ce-737122a14806",
+    "name": "Jordan Peele",
+    "role_type": "director",
+    "primary_genre": "Horror",
+    "avg_roi_multiplier": 5.2,
+    "box_office_power_score": 87.0,
+    "avg_worldwide_gross": 468000000
+  },
+  {
+    "person_id": "6ac45a6d-9314-4ce8-885d-83dcf160c1e7",
+    "name": "Quentin Tarantino",
+    "role_type": "director",
+    "primary_genre": "Crime",
+    "avg_roi_multiplier": 3.4,
+    "box_office_power_score": 86.0,
+    "avg_worldwide_gross": 306000000
+  },
+  {
+    "person_id": "0f3e3fa6-3d55-48f8-96ca-433d11b00de3",
+    "name": "Rian Johnson",
+    "role_type": "director",
+    "primary_genre": "Mystery",
+    "avg_roi_multiplier": 3.5,
+    "box_office_power_score": 84.0,
+    "avg_worldwide_gross": 315000000
+  },
+  {
+    "person_id": "0393e298-f8ad-4719-9e9e-7544b00398bf",
+    "name": "Guillermo del Toro",
+    "role_type": "director",
+    "primary_genre": "Fantasy",
+    "avg_roi_multiplier": 2.9,
+    "box_office_power_score": 85.0,
+    "avg_worldwide_gross": 261000000
+  },
+  {
+    "person_id": "993b3fe5-ad83-47fb-b4de-cd00b306f1d3",
+    "name": "Bong Joon-ho",
+    "role_type": "director",
+    "primary_genre": "Thriller",
+    "avg_roi_multiplier": 4.3,
+    "box_office_power_score": 90.0,
+    "avg_worldwide_gross": 387000000
+  },
+  {
+    "person_id": "7ddf7d94-ae2a-4f1f-9110-1cdb9f48f9f1",
+    "name": "Chad Stahelski",
+    "role_type": "director",
+    "primary_genre": "Action",
+    "avg_roi_multiplier": 3.9,
+    "box_office_power_score": 82.0,
+    "avg_worldwide_gross": 351000000
+  },
+  {
+    "person_id": "68770817-e1a6-463e-9cf7-31f2da936724",
+    "name": "Taika Waititi",
+    "role_type": "director",
+    "primary_genre": "Comedy",
+    "avg_roi_multiplier": 3.1,
+    "box_office_power_score": 80.0,
+    "avg_worldwide_gross": 279000000
+  },
+  {
+    "person_id": "0239aa2b-dd98-4843-bb6b-411a7334f056",
+    "name": "Timothée Chalamet",
+    "role_type": "actor",
+    "primary_genre": "Sci-Fi",
+    "avg_roi_multiplier": 3.4,
+    "box_office_power_score": 88.0,
+    "avg_worldwide_gross": 255000000
+  },
+  {
+    "person_id": "e37c4c97-14ac-425b-b105-3d91c31c9adc",
+    "name": "Zendaya",
+    "role_type": "actor",
+    "primary_genre": "Drama",
+    "avg_roi_multiplier": 3.7,
+    "box_office_power_score": 90.0,
+    "avg_worldwide_gross": 277500000
+  },
+  {
+    "person_id": "85b710bc-27be-4d92-a14d-79085053c818",
+    "name": "Leonardo DiCaprio",
+    "role_type": "actor",
+    "primary_genre": "Drama",
+    "avg_roi_multiplier": 3.5,
+    "box_office_power_score": 94.0,
+    "avg_worldwide_gross": 262500000
+  },
+  {
+    "person_id": "55621c5a-52b2-4b73-9644-dc893fb3294e",
+    "name": "Florence Pugh",
+    "role_type": "actor",
+    "primary_genre": "Thriller",
+    "avg_roi_multiplier": 3.2,
+    "box_office_power_score": 85.0,
+    "avg_worldwide_gross": 240000000
+  },
+  {
+    "person_id": "693720bd-3abc-4409-8f97-9b4a3528b609",
+    "name": "Tom Cruise",
+    "role_type": "actor",
+    "primary_genre": "Action",
+    "avg_roi_multiplier": 4.2,
+    "box_office_power_score": 96.0,
+    "avg_worldwide_gross": 315000000
+  },
+  {
+    "person_id": "61c4043e-a237-480c-ad3c-e404a2aef65f",
+    "name": "Margot Robbie",
+    "role_type": "actor",
+    "primary_genre": "Comedy",
+    "avg_roi_multiplier": 3.9,
+    "box_office_power_score": 91.0,
+    "avg_worldwide_gross": 292500000
+  },
+  {
+    "person_id": "cbe02d85-edfd-465b-89d7-76b813b7a15f",
+    "name": "Keanu Reeves",
+    "role_type": "actor",
+    "primary_genre": "Action",
+    "avg_roi_multiplier": 3.6,
+    "box_office_power_score": 89.0,
+    "avg_worldwide_gross": 270000000
+  },
+  {
+    "person_id": "1fb72715-ad6b-4dc7-8099-3916d38656cf",
+    "name": "Daniel Kaluuya",
+    "role_type": "actor",
+    "primary_genre": "Horror",
+    "avg_roi_multiplier": 4.8,
+    "box_office_power_score": 86.0,
+    "avg_worldwide_gross": 360000000
+  },
+  {
+    "person_id": "755629e4-67da-469d-b708-532acefb17f9",
+    "name": "Ryan Gosling",
+    "role_type": "actor",
+    "primary_genre": "Comedy",
+    "avg_roi_multiplier": 3.0,
+    "box_office_power_score": 87.0,
+    "avg_worldwide_gross": 225000000
+  },
+  {
+    "person_id": "dd900618-2054-499b-9a9a-86ae33bd72dd",
+    "name": "Ana de Armas",
+    "role_type": "actor",
+    "primary_genre": "Mystery",
+    "avg_roi_multiplier": 3.1,
+    "box_office_power_score": 83.0,
+    "avg_worldwide_gross": 232500000
+  },
+  {
+    "person_id": "3908eefb-96d6-4416-8843-cf8fef399235",
+    "name": "Cillian Murphy",
+    "role_type": "actor",
+    "primary_genre": "Drama",
+    "avg_roi_multiplier": 3.8,
+    "box_office_power_score": 88.0,
+    "avg_worldwide_gross": 285000000
+  },
+  {
+    "person_id": "a6d75019-0df4-46d5-ad69-b0bacb5cec31",
+    "name": "Emily Blunt",
+    "role_type": "actor",
+    "primary_genre": "Sci-Fi",
+    "avg_roi_multiplier": 3.3,
+    "box_office_power_score": 86.0,
+    "avg_worldwide_gross": 247500000
+  }
+]
