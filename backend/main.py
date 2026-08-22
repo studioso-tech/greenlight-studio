@@ -10,6 +10,8 @@ import uuid
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -40,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class AnalysisRequest(BaseModel):
     title: str
@@ -193,6 +196,20 @@ def analyze_screenplay(req: AnalysisRequest):
         agent_execution_logs=logs
     )
 
+# Serve Frontend static build if available
+frontend_out = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "out"))
+if os.path.exists(frontend_out):
+    app.mount("/", StaticFiles(directory=frontend_out, html=True), name="frontend")
+else:
+    @app.get("/")
+    def index_fallback():
+        return {
+            "message": "Greenlight Studio API is running.",
+            "dashboard_ui": "Frontend not compiled yet. Access /docs for Swagger UI or run Next.js on port 3000."
+        }
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
