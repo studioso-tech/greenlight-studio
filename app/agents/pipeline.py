@@ -224,11 +224,17 @@ def _greenlight_writer(brief, proposal, findings, numbers, evidence, locale: str
 # Runner
 # --------------------------------------------------------------------------
 
-async def run_agent(agent, prompt: str, ctx: RequestContext) -> str:
-    """Run one ADK agent to completion and return its final text."""
+async def run_agent(agent, prompt: str, ctx: RequestContext, guard=None) -> str:
+    """Run one ADK agent to completion and return its final text.
+
+    The guard is shared across all three agents in a request, so its counters
+    bound the whole pipeline rather than each stage separately.
+    """
     from google.adk.runners import InMemoryRunner
 
     ctx.current_agent = agent.name
+    if guard is not None:
+        guard.attach(agent)
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
     session = await runner.session_service.create_session(
         app_name=APP_NAME, user_id=ctx.request_id
@@ -262,8 +268,8 @@ async def run_agent(agent, prompt: str, ctx: RequestContext) -> str:
     return final_text.strip()
 
 
-async def extract_brief(material: str, ctx: RequestContext) -> ScriptBrief:
-    raw = await run_agent(_script_analyst(), material, ctx)
+async def extract_brief(material: str, ctx: RequestContext, guard=None) -> ScriptBrief:
+    raw = await run_agent(_script_analyst(), material, ctx, guard)
     try:
         return ScriptBrief.model_validate_json(raw)
     except Exception:  # noqa: BLE001
@@ -272,15 +278,16 @@ async def extract_brief(material: str, ctx: RequestContext) -> ScriptBrief:
         return ScriptBrief.model_validate_json(cleaned.strip())
 
 
-async def research(brief: ScriptBrief, proposal: str, ctx: RequestContext) -> str:
+async def research(brief: ScriptBrief, proposal: str, ctx: RequestContext, guard=None) -> str:
     agent = _research_analyst(brief, proposal)
     return await run_agent(
         agent,
         "Assemble the evidence for this greenlight decision. Begin.",
         ctx,
+        guard,
     )
 
 
-async def write_memo(brief, proposal, findings, numbers, evidence, ctx: RequestContext) -> str:
+async def write_memo(brief, proposal, findings, numbers, evidence, ctx: RequestContext, guard=None) -> str:
     agent = _greenlight_writer(brief, proposal, findings, numbers, evidence, ctx.locale)
-    return await run_agent(agent, "Write the greenlight memo now.", ctx)
+    return await run_agent(agent, "Write the greenlight memo now.", ctx, guard)
