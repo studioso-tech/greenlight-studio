@@ -9,19 +9,17 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Any, Literal, Optional
 
 from app.config import settings
 from app.store import schema
-from app.store.clickhouse import LocalStore, QueryResult, StoreUnavailable, get_store
+from app.store.clickhouse import LocalStore, StoreUnavailable, get_store
 
 logger = logging.getLogger("greenlight.queries")
 
 Mode = Literal["film", "series"]
 
 _TABLE = {"film": schema.MOVIES, "series": schema.SERIES}
-_TITLE_COL = {"film": "title", "series": "name"}
 _YEAR_COL = {"film": "release_year", "series": "first_air_year"}
 
 
@@ -69,44 +67,47 @@ def guard_sql(sql: str) -> str:
 # --------------------------------------------------------------------------
 
 SCHEMA_CARD = f"""
-ClickHouse database. Read-only. Three tables:
+ClickHouse database. Read-only. Source: Wikidata (CC0) plus English Wikipedia
+synopses. Three tables:
 
-{schema.MOVIES} (theatrical features, real TMDB records with non-zero budget and revenue)
-  tmdb_id UInt32, title String, original_title String,
-  original_language LowCardinality(String)  -- ISO-639-1, e.g. 'en', 'ja', 'ko'
-  origin_country Array(LowCardinality(String)),
+{schema.MOVIES} (theatrical features that record BOTH a budget and a box office
+gross in US dollars; everything else was dropped)
+  wikidata_id String, title String, title_ja String,
+  original_language String,                  -- English label, e.g. 'English', 'Japanese'
+  origin_country Array(String),
   release_date Date, release_year UInt16, release_month UInt8,
-  genres Array(LowCardinality(String)),      -- use has(genres, 'Drama')
+  genres Array(String),                      -- use has(genres, 'Drama')
   runtime_min UInt16, budget_usd UInt64, revenue_usd UInt64,
   roi_multiple Float32,                      -- revenue_usd / budget_usd
   profitable UInt8,                          -- 1 when roi_multiple >= 2.5
-  vote_average Float32, vote_count UInt32, popularity Float32,
-  overview String, tagline String, embedding Array(Float32)
+  audience_score Float32,                    -- 0-100, only when has_audience_score = 1
+  has_audience_score UInt8,
+  synopsis String, embedding Array(Float32)
 
-{schema.SERIES} (scripted television, real TMDB records)
-  tmdb_id UInt32, name String, original_name String,
-  original_language LowCardinality(String), origin_country Array(LowCardinality(String)),
+{schema.SERIES} (scripted television with a recorded season count)
+  wikidata_id String, title String, title_ja String,
+  original_language String, origin_country Array(String),
   first_air_date Date, last_air_date Date, first_air_year UInt16,
-  status LowCardinality(String),             -- 'Ended' | 'Canceled' | 'Returning Series' | ...
-  series_type LowCardinality(String),        -- 'Scripted' | 'Miniseries' | ...
-  in_production UInt8, number_of_seasons UInt16, number_of_episodes UInt16,
-  episode_run_time UInt16, genres Array(LowCardinality(String)), networks Array(String),
-  vote_average Float32, vote_count UInt32, popularity Float32, overview String,
-  renewed_beyond_s1 UInt8,                   -- 1 when number_of_seasons >= 2
-  cancelled UInt8,                           -- 1 when status = 'Canceled'
-  embedding Array(Float32)
+  number_of_seasons UInt16, number_of_episodes UInt16,
+  genres Array(String), networks Array(String),
+  returned_after_s1 UInt8,   -- number_of_seasons >= 2
+  has_ended UInt8,           -- an end date is recorded
+  did_not_return UInt8,      -- exactly one season, and it has ended
+  still_running UInt8,       -- no end date recorded
+  synopsis String, embedding Array(Float32)
 
-{schema.TALENT} (per-person box-office record, derived from film credits)
-  person_id UInt32, name String,
-  role_type LowCardinality(String),          -- 'director' | 'actor'
-  primary_genre LowCardinality(String), credits UInt16,
+{schema.TALENT} (per-person record, derived from film credits, 2+ credits in a genre)
+  wikidata_id String, name String,
+  role_type String,                          -- 'director' | 'actor'
+  primary_genre String, credits UInt16,
   avg_roi_multiple Float32, median_roi_multiple Float32,
   avg_revenue_usd UInt64, hit_rate_pct Float32
 
 Notes:
   - Money is nominal USD, not inflation adjusted. Say so if it matters.
+  - audience_score is absent for most series; filter on has_audience_score = 1.
   - cosineDistance(embedding, [...]) gives tone similarity; smaller is closer.
-  - Always aggregate; do not return raw embedding columns.
+  - Do not select the embedding column; it is 768 floats per row.
 """.strip()
 
 
@@ -115,13 +116,13 @@ Notes:
 # --------------------------------------------------------------------------
 
 _COMP_COLUMNS = {
-    "film": """tmdb_id, title, release_year, release_month, genres, original_language,
-               runtime_min, budget_usd, revenue_usd, roi_multiple, profitable,
-               vote_average, vote_count, overview""",
-    "series": """tmdb_id, name AS title, first_air_year AS release_year, genres,
-                 original_language, status, number_of_seasons, number_of_episodes,
-                 episode_run_time, networks, renewed_beyond_s1, cancelled,
-                 vote_average, vote_count, overview""",
+    "film": """wikidata_id, title, title_ja, release_year, release_month, genres,
+               original_language, runtime_min, budget_usd, revenue_usd, roi_multiple,
+               profitable, audience_score, has_audience_score, substring(synopsis, 1, 400) AS synopsis""",
+    "series": """wikidata_id, title, title_ja, first_air_year AS release_year, genres,
+                 original_language, number_of_seasons, number_of_episodes, networks,
+                 returned_after_s1, did_not_return, still_running, has_ended,
+                 substring(synopsis, 1, 400) AS synopsis""",
 }
 
 
@@ -210,7 +211,8 @@ def genre_benchmark(
                    round(quantile(0.75)(roi_multiple), 3)      AS p75_roi_multiple,
                    round(100 * countIf(roi_multiple >= 1.0) / count(), 1) AS pct_recouped_budget,
                    round(100 * countIf(profitable) / count(), 1)          AS pct_hit,
-                   round(avg(vote_average), 2)                 AS avg_score
+                   round(avgIf(audience_score, has_audience_score = 1), 1) AS avg_audience_score,
+                   countIf(has_audience_score = 1)             AS scored_titles
             FROM {table} {where_sql}
         """
     else:
@@ -219,10 +221,10 @@ def genre_benchmark(
                    round(avg(number_of_seasons), 2)            AS avg_seasons,
                    round(median(number_of_seasons), 1)         AS median_seasons,
                    round(avg(number_of_episodes), 1)           AS avg_episodes,
-                   round(100 * countIf(renewed_beyond_s1) / count(), 1) AS pct_renewed_beyond_s1,
-                   round(100 * countIf(cancelled) / count(), 1)         AS pct_cancelled,
+                   round(100 * countIf(returned_after_s1) / count(), 1) AS pct_returned_after_s1,
+                   round(100 * countIf(did_not_return) / count(), 1)    AS pct_did_not_return,
                    round(100 * countIf(number_of_seasons >= 3) / count(), 1) AS pct_reached_s3,
-                   round(avg(vote_average), 2)                 AS avg_score
+                   round(100 * countIf(still_running) / count(), 1)     AS pct_still_running
             FROM {table} {where_sql}
         """
     return store.query(sql, params).as_tool_payload()

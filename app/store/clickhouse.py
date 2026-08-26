@@ -168,7 +168,6 @@ class LocalStore:
             r = dict(rows[int(i)])
             r.pop("embedding", None)
             if mode == "series":
-                r["title"] = r.get("name")
                 r["release_year"] = r.get("first_air_year")
             r["tone_distance"] = round(float(distance[int(i)]), 4)
             out.append(r)
@@ -199,7 +198,8 @@ class LocalStore:
                 "median_roi_multiple": round(statistics.median(roi), 3),
                 "pct_recouped_budget": self._pct(rows, lambda r: (r.get("roi_multiple") or 0) >= 1.0),
                 "pct_hit": self._pct(rows, lambda r: r.get("profitable")),
-                "avg_score": round(statistics.fmean(r["vote_average"] for r in rows), 2),
+                "avg_audience_score": round(statistics.fmean(
+                    [r["audience_score"] for r in rows if r.get("has_audience_score")] or [0.0]), 1),
             }
         else:
             seasons = [r.get("number_of_seasons") or 0 for r in rows]
@@ -208,10 +208,10 @@ class LocalStore:
                 "avg_seasons": round(statistics.fmean(seasons), 2),
                 "median_seasons": round(statistics.median(seasons), 1),
                 "avg_episodes": round(statistics.fmean(r.get("number_of_episodes") or 0 for r in rows), 1),
-                "pct_renewed_beyond_s1": self._pct(rows, lambda r: r.get("renewed_beyond_s1")),
-                "pct_cancelled": self._pct(rows, lambda r: r.get("cancelled")),
+                "pct_returned_after_s1": self._pct(rows, lambda r: r.get("returned_after_s1")),
+                "pct_did_not_return": self._pct(rows, lambda r: r.get("did_not_return")),
                 "pct_reached_s3": self._pct(rows, lambda r: (r.get("number_of_seasons") or 0) >= 3),
-                "avg_score": round(statistics.fmean(r["vote_average"] for r in rows), 2),
+                "pct_still_running": self._pct(rows, lambda r: r.get("still_running")),
             }
         return QueryResult([stat], (time.perf_counter() - t0) * 1000, "", self.backend).as_tool_payload(False)
 

@@ -154,8 +154,8 @@ def project_series(
 ) -> SeriesProjection:
     """Television is not judged on ROI - it is judged on whether it comes back."""
     seasons = [int(c["number_of_seasons"]) for c in comps if c.get("number_of_seasons")]
-    renewed = [1 for c in comps if c.get("renewed_beyond_s1")]
-    cancelled = [1 for c in comps if c.get("cancelled")]
+    renewed = [1 for c in comps if c.get("returned_after_s1")]
+    cancelled = [1 for c in comps if c.get("did_not_return")]
     n = len(comps)
 
     if n >= 4:
@@ -165,8 +165,8 @@ def project_series(
         expected = round(statistics.fmean(seasons), 2) if seasons else 1.0
         sample = n
     elif benchmark:
-        renewal_pct = float(benchmark.get("pct_renewed_beyond_s1") or 0.0)
-        cancel_pct = float(benchmark.get("pct_cancelled") or 0.0)
+        renewal_pct = float(benchmark.get("pct_returned_after_s1") or 0.0)
+        cancel_pct = float(benchmark.get("pct_did_not_return") or 0.0)
         reach_s3 = float(benchmark.get("pct_reached_s3") or 0.0)
         expected = float(benchmark.get("avg_seasons") or 1.0)
         sample = int(benchmark.get("sample_size") or 0)
@@ -184,9 +184,11 @@ def project_series(
         comp_sample_size=sample,
         assumptions=[
             Assumption("renewal_definition", "number_of_seasons >= 2",
-                       "A show counts as renewed when TMDB records a second season."),
-            Assumption("cancellation_definition", "status = 'Canceled'",
-                       "TMDB marks a show Canceled when it ended before its story did."),
+                       "A show counts as having returned when Wikidata records a second season."),
+            Assumption("did_not_return_definition", "one season, and an end date is recorded",
+                       "Wikidata has no cancellation flag, so a single-season show that has "
+                       "ended stands in for one that was not renewed. A single-season show "
+                       "still in production is not counted against it."),
             Assumption("no_viewership_data", True,
                        "Platforms do not publish viewing figures, so renewal outcomes stand in "
                        "for audience performance."),
@@ -220,10 +222,10 @@ def score_film(projection: FilmProjection, comps: list[dict], budget_usd: int,
     evidence = _band(projection.comp_sample_size, 2, 8)
     upside = _band(projection.base_roi, 1.0, 4.0)
     downside = _band(projection.probability_break_even_pct, 20.0, 80.0)
-    reception = _band(
-        statistics.fmean([float(c.get("vote_average") or 0) for c in comps]) if comps else 0.0,
-        5.5, 8.0,
-    )
+    scored = [float(c["audience_score"]) for c in comps if c.get("has_audience_score")]
+    # No score at all is not the same as a bad score: fall back to neutral so a
+    # thinly documented comp set cannot silently drag the verdict down.
+    reception = _band(statistics.fmean(scored), 40.0, 85.0) if scored else 0.5
     median_budget = float((benchmark or {}).get("median_budget_usd") or budget_usd or 1)
     # Being far above the genre's median budget is the single most common way a
     # film fails to recoup, so overshooting is penalised, undershooting is not.
@@ -255,23 +257,20 @@ def score_series(projection: SeriesProjection, comps: list[dict],
     renewal = _band(projection.renewal_probability_pct, 20.0, 80.0)
     longevity = _band(projection.expected_seasons, 1.0, 4.0)
     survival = 1.0 - _band(projection.cancellation_risk_pct, 10.0, 60.0)
-    reception = _band(
-        statistics.fmean([float(c.get("vote_average") or 0) for c in comps]) if comps else 0.0,
-        5.5, 8.5,
-    )
+    # Wikidata carries review scores for films but almost never for series, so
+    # television is scored on outcomes alone rather than on a field that would
+    # be empty for every row.
     components = {
         "renewal_likelihood": round(renewal, 3),
         "cancellation_safety": round(survival, 3),
         "longevity": round(longevity, 3),
-        "comp_reception": round(reception, 3),
         "evidence_strength": round(evidence, 3),
     }
     weights = {
-        "renewal_likelihood": 0.32,
-        "cancellation_safety": 0.24,
-        "longevity": 0.20,
-        "comp_reception": 0.14,
-        "evidence_strength": 0.10,
+        "renewal_likelihood": 0.38,
+        "cancellation_safety": 0.28,
+        "longevity": 0.22,
+        "evidence_strength": 0.12,
     }
     raw = sum(components[k] * w for k, w in weights.items())
     value = int(round(raw * 100))
