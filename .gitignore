@@ -45,3 +45,4 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+infra/.ch_password
