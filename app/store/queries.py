@@ -22,6 +22,25 @@ Mode = Literal["film", "series"]
 _TABLE = {"film": schema.MOVIES, "series": schema.SERIES}
 _YEAR_COL = {"film": "release_year", "series": "first_air_year"}
 
+# The catalogue stores language NAMES, because that is what Wikidata labels are.
+# A model that has seen a million API docs will reach for an ISO code anyway, and
+# a silent zero-row answer is the worst possible response to that mistake - it
+# looks like "no such films exist" rather than "you spelled it differently".
+_LANGUAGE_CODES = {
+    "en": "English", "ja": "Japanese", "ko": "Korean", "zh": "Chinese",
+    "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+    "ru": "Russian", "pt": "Portuguese", "hi": "Hindi", "ar": "Arabic",
+    "sv": "Swedish", "da": "Danish", "no": "Norwegian", "nl": "Dutch",
+    "pl": "Polish", "tr": "Turkish", "th": "Thai", "he": "Hebrew",
+}
+
+
+def normalise_language(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = value.strip()
+    return _LANGUAGE_CODES.get(cleaned.lower(), cleaned)
+
 
 # --------------------------------------------------------------------------
 # guards
@@ -150,6 +169,7 @@ def find_comparable_titles(
     if genre:
         where.append("has(genres, %(genre)s)")
         params["genre"] = genre
+    language = normalise_language(language)
     if language:
         where.append("original_language = %(lang)s")
         params["lang"] = language
@@ -188,6 +208,7 @@ def genre_benchmark(
     if genre:
         where.append("has(genres, %(genre)s)")
         params["genre"] = genre
+    language = normalise_language(language)
     if language:
         where.append("original_language = %(lang)s")
         params["lang"] = language

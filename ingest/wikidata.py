@@ -577,6 +577,12 @@ def load_into_clickhouse() -> None:
         missing = [r for r in rows if table != schema.TALENT and not r.get("embedding")]
         if missing:
             raise SystemExit(f"{table}: {len(missing)} rows have no embedding. Run 'embed' first.")
+        # ClickHouse Date columns want real date objects, not ISO strings.
+        for row in rows:
+            for column in ("release_date", "first_air_date", "last_air_date"):
+                value = row.get(column)
+                if isinstance(value, str):
+                    row[column] = date.fromisoformat(value)
         inserted = 0
         for start in range(0, len(rows), 500):
             inserted += store.insert_rows(table, rows[start : start + 500])

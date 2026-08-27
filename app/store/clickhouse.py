@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,23 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 class StoreUnavailable(RuntimeError):
     pass
+
+
+def sanitise(value: Any) -> Any:
+    """Strip values that are legal in ClickHouse but not in JSON.
+
+    An aggregate over an empty set returns NaN, and NaN is not valid JSON. Left
+    alone it reaches the model as a malformed payload and the request dies with
+    a 400 - which is exactly what happened the first time an agent filtered a
+    segment down to zero rows.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: sanitise(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [sanitise(v) for v in value]
+    return value
 
 
 @dataclass
@@ -77,7 +95,7 @@ class ClickHouseStore:
         result = self._client.query(sql, parameters=parameters or {})
         elapsed = (time.perf_counter() - t0) * 1000
         cols = result.column_names
-        rows = [dict(zip(cols, r)) for r in result.result_rows]
+        rows = [sanitise(dict(zip(cols, r))) for r in result.result_rows]
         return QueryResult(rows=rows, elapsed_ms=elapsed, sql=sql.strip(), backend=self.backend)
 
     def command(self, sql: str) -> None:

@@ -25,11 +25,31 @@ from pydantic import BaseModel, Field
 from app.agents import tools as agent_tools
 from app.agents.context import RequestContext
 from app.config import settings
+from app.llm import adk_model
 from app.store.queries import SCHEMA_CARD
 
 logger = logging.getLogger("greenlight.pipeline")
 
 APP_NAME = "greenlight-studio"
+
+
+def _config(max_output_tokens: int = 2048):
+    """Generation config shared by every agent.
+
+    Thinking is off. Measured on this pipeline: the same extraction takes 0.8s
+    with thinking disabled and 5-29s with the 2.5-flash default, because the
+    model spends 600-800 thought tokens on it. None of these three agents is
+    doing open-ended reasoning - one extracts fields, one picks queries from a
+    documented schema, one writes prose from numbers it is forbidden to alter -
+    so the thinking budget buys nothing and costs the demo its responsiveness.
+    """
+    from google.genai import types as genai_types
+
+    return genai_types.GenerateContentConfig(
+        temperature=0.2,
+        max_output_tokens=max_output_tokens,
+        thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -57,7 +77,10 @@ class ScriptBrief(BaseModel):
     suggested_rating: str = Field(default="", description="G, PG, PG-13, R, or a TV equivalent.")
     vfx_load: Literal["low", "medium", "high", "extreme"] = "medium"
     original_language: str = Field(
-        default="en", description="ISO-639-1 code of the language the project is made in."
+        default="English",
+        description="The language the project is made in, written as its English NAME "
+        "- 'English', 'Japanese', 'Korean', 'Spanish'. Not an ISO code: the catalogue "
+        "stores names, and a code matches nothing.",
     )
     risks_noticed: list[str] = Field(
         default_factory=list,
@@ -83,7 +106,7 @@ def _script_analyst():
 
     return LlmAgent(
         name="script_analyst",
-        model=settings().reasoning_model,
+        model=adk_model(settings().reasoning_model),
         description="Reads a screenplay, treatment or series bible and extracts a structured brief.",
         instruction=(
             "You are a development executive's reader. You are given raw material for a project: "
@@ -97,6 +120,7 @@ def _script_analyst():
         ),
         output_schema=ScriptBrief,
         output_key="brief",
+        generate_content_config=_config(1536),
     )
 
 
@@ -144,7 +168,7 @@ def _research_analyst(brief: ScriptBrief, proposal: str):
 
     return LlmAgent(
         name="research_analyst",
-        model=settings().reasoning_model,
+        model=adk_model(settings().reasoning_model),
         description="Investigates the ClickHouse catalogue, writing its own SQL when needed.",
         instruction=_RESEARCH_INSTRUCTION.format(
             schema_card=SCHEMA_CARD,
@@ -152,6 +176,7 @@ def _research_analyst(brief: ScriptBrief, proposal: str):
             proposal=proposal,
         ),
         tools=list(agent_tools.RESEARCH_TOOLS),
+        generate_content_config=_config(2048),
     )
 
 
@@ -205,7 +230,7 @@ def _greenlight_writer(brief, proposal, findings, numbers, evidence, locale: str
 
     return LlmAgent(
         name="greenlight_writer",
-        model=settings().writer_model,
+        model=adk_model(settings().writer_model),
         description="Writes the greenlight memo from evidence and computed numbers.",
         instruction=_WRITER_INSTRUCTION.format(
             language_name=_LANGUAGE_NAME.get(locale, "English"),
@@ -217,6 +242,7 @@ def _greenlight_writer(brief, proposal, findings, numbers, evidence, locale: str
             verdict=numbers.get("score", {}).get("verdict", ""),
             score=numbers.get("score", {}).get("value", ""),
         ),
+        generate_content_config=_config(2048),
     )
 
 
@@ -242,7 +268,9 @@ async def run_agent(agent, prompt: str, ctx: RequestContext, guard=None) -> str:
     message = genai_types.Content(role="user", parts=[genai_types.Part(text=prompt)])
 
     final_text = ""
-    model = getattr(agent, "model", settings().reasoning_model)
+    # agent.model is now a Gemini object, not a string; the meter needs the name.
+    model_field = getattr(agent, "model", None)
+    model = getattr(model_field, "model", None) or str(model_field or settings().reasoning_model)
     try:
         async for event in runner.run_async(
             user_id=ctx.request_id, session_id=session.id, new_message=message

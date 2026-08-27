@@ -33,9 +33,11 @@ logger = logging.getLogger("greenlight.guardrails")
 class Limits:
     """Every number here is a ceiling, not a target."""
 
-    max_model_calls: int = 14          # whole request, across all three agents
-    max_tool_calls: int = 24           # whole request
-    max_calls_per_tool: int = 10       # one tool used over and over
+    # Every tool call costs a model turn to service, so the model ceiling has
+    # to sit above the tool ceiling or the guard strangles its own tools.
+    max_model_calls: int = 26          # whole request, across all three agents
+    max_tool_calls: int = 16           # whole request
+    max_calls_per_tool: int = 5        # one tool used over and over
     max_identical_calls: int = 2       # same tool, same arguments - a loop
     deadline_seconds: int = field(default_factory=lambda: settings().agent_timeout_sec)
     max_cost_usd: float = field(default_factory=lambda: settings().max_cost_usd_per_request)
@@ -102,8 +104,12 @@ class RunawayGuard:
 
     # -- ADK hooks -------------------------------------------------------
 
-    def before_model(self, context, llm_request):
-        """Runs before every LLM call. Returning a response cancels the call."""
+    def before_model(self, callback_context=None, llm_request=None):
+        """Runs before every LLM call. Returning a response cancels the call.
+
+        ADK invokes callbacks by keyword, so the parameter names here are part
+        of the contract, not decoration.
+        """
         from google.adk.models.llm_response import LlmResponse
         from google.genai import types as genai_types
 
@@ -128,8 +134,9 @@ class RunawayGuard:
         self.model_calls += 1
         return None
 
-    def before_tool(self, tool, args: dict[str, Any], tool_context):
+    def before_tool(self, tool=None, args: Optional[dict[str, Any]] = None, tool_context=None):
         """Runs before every tool call. Returning a dict replaces the tool result."""
+        args = args or {}
         name = getattr(tool, "name", str(tool))
         signature = self._signature(name, args)
 

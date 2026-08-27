@@ -58,7 +58,8 @@ def find_comparable_titles(
 
     Args:
         genre: Restrict to one genre, e.g. "Science Fiction", "Drama". Empty means any.
-        language: ISO-639-1 original language, e.g. "en", "ja", "ko". Empty means any.
+        language: Original language as its English NAME - "English", "Japanese",
+            "Korean", "Russian", "Spanish", "French". Not an ISO code. Empty means any.
         min_year: Only titles released in or after this year. 0 means no limit.
         limit: How many comparables to return, 1-25.
 
@@ -102,7 +103,7 @@ def benchmark_segment(
 
     Args:
         genre: Restrict to one genre. Empty means the whole catalogue.
-        language: ISO-639-1 original language. Empty means any.
+        language: Original language as its English NAME, e.g. "Japanese". Empty means any.
         min_year: Only titles from this year onward. 0 means no limit.
         budget_floor_usd: Lower bound of a budget band (film only). 0 disables the band.
         budget_ceiling_usd: Upper bound of a budget band (film only). 0 disables the band.

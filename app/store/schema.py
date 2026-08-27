@@ -30,7 +30,7 @@ def ddl() -> list[str]:
             title_ja           String,
             original_language  LowCardinality(String),
             origin_country     Array(LowCardinality(String)),
-            release_date       Date,
+            release_date       Date32,   -- Date starts at 1970; the catalogue starts in 1921
             release_year       UInt16,
             release_month      UInt8,
             genres             Array(LowCardinality(String)),
@@ -57,8 +57,8 @@ def ddl() -> list[str]:
             title_ja            String,
             original_language   LowCardinality(String),
             origin_country      Array(LowCardinality(String)),
-            first_air_date      Date,
-            last_air_date       Date,
+            first_air_date      Date32,   -- Date starts at 1970; the catalogue starts in 1937
+            last_air_date       Date32,
             first_air_year      UInt16,
             number_of_seasons   UInt16,
             number_of_episodes  UInt16,

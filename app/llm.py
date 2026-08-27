@@ -40,6 +40,46 @@ def genai_client():
     return client
 
 
+@lru_cache(maxsize=1)
+def adk_model_class():
+    """ADK model class that reuses our one warmed genai client.
+
+    Handing ADK a plain model string makes it build its own client, and that
+    client pays the TLS handshake and token fetch again on every call. Measured
+    on this machine: 30-40s per call that way, 0.7s once a single client is
+    shared. ADK documents overriding ``api_client`` for exactly this.
+    """
+    from functools import cached_property
+
+    from google.adk.models import Gemini
+
+    class SharedClientGemini(Gemini):
+        @cached_property
+        def api_client(self):
+            return genai_client()
+
+    return SharedClientGemini
+
+
+def adk_model(model_name: str):
+    return adk_model_class()(model=model_name)
+
+
+def warm_up() -> float:
+    """Pay the cold-start cost once, at import or startup, not mid-request."""
+    import time
+
+    started = time.perf_counter()
+    try:
+        client = genai_client()
+        client.models.count_tokens(model=settings().reasoning_model, contents="warm")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("warm-up call failed (continuing): %s", exc)
+    elapsed = time.perf_counter() - started
+    logger.info("Gemini client warmed in %.1fs", elapsed)
+    return elapsed
+
+
 def llm_status() -> dict:
     s = settings()
     return {

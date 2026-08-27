@@ -1,0 +1,188 @@
+"""The orchestrator: one request, three agents, deterministic maths in between.
+
+This is the only place that knows the whole shape of an analysis. The API layer
+calls run_analysis(); the What-if endpoint calls recompute(), which reuses the
+evidence already gathered and never touches a model.
+"""
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Literal, Optional
+
+from app.agents import pipeline
+from app.agents.context import RequestContext, reset_context, set_context
+from app.agents.guardrails import Limits, RunawayGuard, with_deadline
+from app.config import settings
+from app.cost import BudgetExceeded, CostMeter
+from app.embeddings import embed_one
+from app.scoring import (
+    FilmProjection,
+    SeriesProjection,
+    project_film,
+    project_series,
+    score_film,
+    score_series,
+)
+
+logger = logging.getLogger("greenlight.analysis")
+
+Mode = Literal["film", "series"]
+
+
+@dataclass
+class Proposal:
+    """What the reviewer is putting on the table."""
+
+    mode: Mode = "film"
+    budget_usd: int = 40_000_000            # film
+    per_episode_budget_usd: int = 3_000_000  # series
+    episodes: int = 8                        # series
+    release_month: int = 0                   # 0 = unspecified
+    locale: str = "en"
+
+    def describe(self) -> str:
+        if self.mode == "film":
+            line = f"a theatrical feature at a production budget of ${self.budget_usd:,}"
+        else:
+            total = self.per_episode_budget_usd * self.episodes
+            line = (f"a {self.episodes}-episode season at ${self.per_episode_budget_usd:,} "
+                    f"per episode (${total:,} for the season)")
+        if self.release_month:
+            months = ["", "January", "February", "March", "April", "May", "June", "July",
+                      "August", "September", "October", "November", "December"]
+            line += f", targeting a {months[self.release_month]} release"
+        return line
+
+
+def _project_and_score(proposal: Proposal, comps: list[dict], benchmark: dict):
+    """Deterministic half. No model call reaches this function."""
+    if proposal.mode == "film":
+        projection = project_film(proposal.budget_usd, comps, benchmark or None)
+        score = score_film(projection, comps, proposal.budget_usd, benchmark or None)
+    else:
+        projection = project_series(
+            proposal.per_episode_budget_usd, proposal.episodes, comps, benchmark or None
+        )
+        score = score_series(projection, comps, benchmark or None)
+    return projection, score
+
+
+def _numbers(projection, score) -> dict:
+    return {"projection": projection.to_dict(), "score": score.to_dict()}
+
+
+def _evidence(ctx: RequestContext) -> dict:
+    """Only the fields a memo may quote. Embeddings and full synopses stay out."""
+    keep_film = ("title", "title_ja", "release_year", "genres", "original_language",
+                 "budget_usd", "revenue_usd", "roi_multiple", "audience_score",
+                 "has_audience_score", "tone_distance")
+    keep_series = ("title", "title_ja", "release_year", "genres", "original_language",
+                   "number_of_seasons", "number_of_episodes", "networks",
+                   "returned_after_s1", "did_not_return", "still_running", "tone_distance")
+    keep = keep_film if ctx.mode == "film" else keep_series
+    return {
+        "comparable_titles": [{k: c[k] for k in keep if k in c} for c in ctx.comps],
+        "segment_benchmark": ctx.benchmark,
+        "talent": ctx.talent[:5],
+    }
+
+
+async def run_analysis(material: str, proposal: Proposal) -> dict:
+    """Full pass: read the material, investigate, compute, write the memo."""
+    request_id = str(uuid.uuid4())[:8]
+    meter = CostMeter(request_id)
+    ctx = RequestContext(
+        request_id=request_id, mode=proposal.mode, meter=meter, locale=proposal.locale
+    )
+    guard = RunawayGuard(ctx)
+    token = set_context(ctx)
+    started = time.perf_counter()
+    warnings: list[str] = []
+
+    try:
+        async def _work() -> dict:
+            brief = await pipeline.extract_brief(material, ctx, guard)
+            ctx.embedding = embed_one(pipeline.embedding_text(brief), meter=meter)
+
+            findings = await pipeline.research(brief, proposal.describe(), ctx, guard)
+
+            if not ctx.comps:
+                # The analyst never got a usable comp set; fall back to an
+                # unfiltered nearest-neighbour pull so the request still
+                # produces something defensible, and say so.
+                from app.store import queries
+
+                warnings.append(
+                    "The analyst did not retrieve a comparable set, so an unfiltered "
+                    "nearest-neighbour search was used instead."
+                )
+                payload = queries.find_comparable_titles(
+                    embedding=ctx.embedding, mode=ctx.mode, limit=8
+                )
+                ctx.comps = payload.get("rows") or []
+
+            projection, score = _project_and_score(proposal, ctx.comps, ctx.benchmark)
+            numbers = _numbers(projection, score)
+            evidence = _evidence(ctx)
+
+            memo = await pipeline.write_memo(
+                brief, proposal.describe(), findings, numbers, evidence, ctx, guard
+            )
+            return {
+                "brief": brief.model_dump(),
+                "findings": findings,
+                "memo": memo,
+                **numbers,
+                "evidence": evidence,
+            }
+
+        result = await with_deadline(_work(), settings().agent_timeout_sec + 30, request_id)
+
+    except BudgetExceeded as exc:
+        logger.error("request %s stopped on budget: %s", request_id, exc)
+        raise
+    finally:
+        reset_context(token)
+
+    result.update({
+        "request_id": request_id,
+        "mode": proposal.mode,
+        "locale": proposal.locale,
+        "proposal": proposal.__dict__,
+        "warnings": warnings,
+        "elapsed_seconds": round(time.perf_counter() - started, 2),
+        "cost": meter.summary(),
+        "guardrails": guard.status(),
+        "trace": [t.__dict__ for t in ctx.trace],
+        "clickhouse_ms": ctx.clickhouse_ms,
+    })
+    logger.info(
+        "request %s done in %.1fs, %d tool calls, $%.4f",
+        request_id, result["elapsed_seconds"], guard.tool_calls, meter.usd,
+    )
+    return result
+
+
+def recompute(previous: dict, proposal: Proposal) -> dict:
+    """What-if: re-run the maths on evidence we already have.
+
+    No model call, no database call. This is why the sliders can be live.
+    """
+    started = time.perf_counter()
+    comps = previous.get("evidence", {}).get("comparable_titles", [])
+    benchmark = previous.get("evidence", {}).get("segment_benchmark", {})
+    if not comps:
+        raise ValueError("Nothing to recompute: the original analysis has no comparable set.")
+    projection, score = _project_and_score(proposal, comps, benchmark)
+    return {
+        "request_id": previous.get("request_id"),
+        "mode": proposal.mode,
+        "proposal": proposal.__dict__,
+        **_numbers(projection, score),
+        "recomputed_in_ms": round((time.perf_counter() - started) * 1000, 3),
+        "model_calls": 0,
+        "database_calls": 0,
+    }
