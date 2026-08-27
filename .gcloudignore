@@ -1,0 +1,21 @@
+# gcloud はこのファイルが無いと .gitignore を代用する。
+# ビルドに必要な data/samples.json と data/manifest.json まで落ちてしまうため、
+# アップロード対象は git の無視設定とは別に、ここで明示的に決める。
+.git/
+.gitignore
+.venv/
+.venv-mcp/
+.venv-build/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+infra/.ch_password
+tests/
+.claude/
+
+# 巨大な中間生成物のみ除外する。samples.json と manifest.json は残す。
+data/_cache/
+data/*.jsonl
+data/_last_*.json
+data/film_credits.json
