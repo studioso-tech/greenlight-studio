@@ -1,0 +1,36 @@
+{
+  "samples": [
+    {
+      "id": "solitary-orbit",
+      "mode": "film",
+      "title": "The Solitary Orbit",
+      "budget_usd": 25000000,
+      "release_month": 10,
+      "material": "TITLE: THE SOLITARY ORBIT\n\nA near-future drama. Dr. Mei Harrow is the last technician aboard the decommissioned\nresearch station Europa-9, three months past the evacuation order, refusing to leave\nbecause the ice below has started transmitting. Her only company is the station's\nfailing life-support AI and eight-minute-delayed messages from a daughter on Earth who\nhas stopped answering. As the transmissions resolve into something that sounds like her\nown voice, Mei must decide whether she is receiving a signal or losing her mind.\n\nQuiet, interior, shot in long takes. Practical sets, minimal VFX beyond the ice field."
+    },
+    {
+      "id": "kyoto-mist",
+      "mode": "film",
+      "title": "Shadows of the Kyoto Mist",
+      "budget_usd": 8000000,
+      "release_month": 6,
+      "material": "TITLE: SHADOWS OF THE KYOTO MIST\n\nA cyberpunk noir set in a Kyoto where the temples have been retrofitted as data\nsanctuaries. A disgraced memory-broker is hired to recover a dead woman's final hour,\nand finds his own face in it. Rain, neon on wet stone, long silences.\n\nJapanese language. Practical locations, moderate VFX. Intended for festival launch\nbefore a streaming window."
+    },
+    {
+      "id": "harbour-line",
+      "mode": "series",
+      "title": "The Harbour Line",
+      "per_episode_budget_usd": 4000000,
+      "episodes": 8,
+      "material": "SERIES BIBLE: THE HARBOUR LINE\n\nAn eight-episode crime drama. When a container ship runs aground in a declining port\ntown, the customs officer who boards it finds forty people alive in the hold and a\nmanifest that says the ship is empty. Her investigation implicates the union her father\nbuilt, the mayor who saved the town, and eventually herself.\n\nSerialised, one case across the season, ensemble cast. Grounded, no procedural reset.\nIntended for a premium cable or streaming slot, with a second season if it lands."
+    },
+    {
+      "id": "tokyo-sonata-2",
+      "mode": "series",
+      "title": "Late Bloom",
+      "per_episode_budget_usd": 900000,
+      "episodes": 10,
+      "material": "SERIES BIBLE: LATE BLOOM\n\nA ten-episode Japanese workplace drama. A 58-year-old salaryman is transferred to a\nsubsidiary that turns out to be a shell company with one employee: a 23-year-old\nprogrammer who has been running it alone for two years. Neither can report the other\nwithout ending their own career.\n\nQuiet comedy that curdles into something sadder. Single location, dialogue driven.\nJapanese language, terrestrial broadcast slot."
+    }
+  ]
+}

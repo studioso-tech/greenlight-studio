@@ -49,3 +49,4 @@ infra/.ch_password
 data/*.jsonl
 data/_cache/
 data/*.json
+!data/samples.json

@@ -79,16 +79,19 @@ def _band_benchmark(proposal: Proposal, brief) -> dict:
     """Outcomes for this genre at this budget. The heart of the What-if."""
     from app.store import queries
 
+    genre = getattr(brief, "primary_genre", None)
+    language = getattr(brief, "original_language", None)
     if proposal.mode != "film":
-        payload = queries.genre_benchmark(
-            mode="series",
-            genre=getattr(brief, "primary_genre", None) or (brief or {}).get("primary_genre"),
-        )
+        # Language matters more than genre for television: it decides whether
+        # "did not return" means cancelled or simply finished. Fall back to
+        # genre alone if the market slice is too thin to be a baseline.
+        payload = queries.genre_benchmark(mode="series", genre=genre, language=language)
+        rows = payload.get("rows") or []
+        if not rows or (rows[0].get("sample_size") or 0) < 12:
+            payload = queries.genre_benchmark(mode="series", genre=genre)
     else:
         payload = queries.genre_benchmark(
-            mode="film",
-            genre=getattr(brief, "primary_genre", None) or (brief or {}).get("primary_genre"),
-            budget_band_usd=budget_band(proposal.budget_usd),
+            mode="film", genre=genre, budget_band_usd=budget_band(proposal.budget_usd)
         )
     rows = payload.get("rows") or []
     row = dict(rows[0]) if rows else {}

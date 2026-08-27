@@ -205,29 +205,63 @@ def project_film(
     )
 
 
+# How much a small comparable set is pulled toward the market baseline. Five
+# single-season comps do not establish a 0% renewal rate; they establish that
+# five shows ended, in a market where the base rate is whatever it is. This is
+# the pseudo-count in a standard shrinkage estimate, chosen so a set of five
+# carries slightly less weight than the market and a set of twenty dominates it.
+SHRINKAGE_PRIOR = 8.0
+
+
+def _shrink(observed_pct: float, n: int, baseline_pct: Optional[float]) -> float:
+    """Pull a small-sample rate toward the market base rate."""
+    if baseline_pct is None or n <= 0:
+        return observed_pct
+    successes = observed_pct / 100.0 * n
+    prior = baseline_pct / 100.0 * SHRINKAGE_PRIOR
+    return round(100.0 * (successes + prior) / (n + SHRINKAGE_PRIOR), 1)
+
+
 def project_series(
     per_episode_budget_usd: int,
     episodes: int,
     comps: list[dict],
     benchmark: Optional[dict] = None,
 ) -> SeriesProjection:
-    """Television is not judged on ROI - it is judged on whether it comes back."""
+    """Television is not judged on ROI - it is judged on whether it comes back.
+
+    The comparable set says what happened to shows like this one; the market
+    benchmark says what happens in this market generally. A handful of comps is
+    too small to trust on its own, so the two are combined rather than one
+    being chosen over the other.
+    """
     seasons = [int(c["number_of_seasons"]) for c in comps if c.get("number_of_seasons")]
-    renewed = [1 for c in comps if c.get("returned_after_s1")]
-    cancelled = [1 for c in comps if c.get("did_not_return")]
     n = len(comps)
 
-    if n >= 4:
-        renewal_pct = round(100 * len(renewed) / n, 1)
-        cancel_pct = round(100 * len(cancelled) / n, 1)
-        reach_s3 = round(100 * sum(1 for s in seasons if s >= 3) / n, 1) if seasons else 0.0
-        expected = round(statistics.fmean(seasons), 2) if seasons else 1.0
+    base_renewal = float(benchmark.get("pct_returned_after_s1")) if benchmark and benchmark.get("pct_returned_after_s1") is not None else None
+    base_cancel = float(benchmark.get("pct_did_not_return")) if benchmark and benchmark.get("pct_did_not_return") is not None else None
+    base_s3 = float(benchmark.get("pct_reached_s3")) if benchmark and benchmark.get("pct_reached_s3") is not None else None
+    base_seasons = float(benchmark.get("avg_seasons")) if benchmark and benchmark.get("avg_seasons") else None
+
+    if n >= 3:
+        observed_renewal = 100.0 * sum(1 for c in comps if c.get("returned_after_s1")) / n
+        observed_cancel = 100.0 * sum(1 for c in comps if c.get("did_not_return")) / n
+        observed_s3 = 100.0 * sum(1 for s in seasons if s >= 3) / n if seasons else 0.0
+        observed_seasons = statistics.fmean(seasons) if seasons else 1.0
+
+        renewal_pct = _shrink(observed_renewal, n, base_renewal)
+        cancel_pct = _shrink(observed_cancel, n, base_cancel)
+        reach_s3 = _shrink(observed_s3, n, base_s3)
+        expected = round(
+            (observed_seasons * n + (base_seasons or observed_seasons) * SHRINKAGE_PRIOR)
+            / (n + SHRINKAGE_PRIOR), 2
+        )
         sample = n
-    elif benchmark:
-        renewal_pct = float(benchmark.get("pct_returned_after_s1") or 0.0)
-        cancel_pct = float(benchmark.get("pct_did_not_return") or 0.0)
-        reach_s3 = float(benchmark.get("pct_reached_s3") or 0.0)
-        expected = float(benchmark.get("avg_seasons") or 1.0)
+    elif benchmark and benchmark.get("sample_size"):
+        renewal_pct = base_renewal or 0.0
+        cancel_pct = base_cancel or 0.0
+        reach_s3 = base_s3 or 0.0
+        expected = base_seasons or 1.0
         sample = int(benchmark.get("sample_size") or 0)
     else:
         raise ValueError("No series evidence available: cannot project without comparables.")
@@ -236,10 +270,10 @@ def project_series(
         per_episode_budget_usd=per_episode_budget_usd,
         episodes=episodes,
         season_cost_usd=per_episode_budget_usd * episodes,
-        renewal_probability_pct=renewal_pct,
-        cancellation_risk_pct=cancel_pct,
+        renewal_probability_pct=round(renewal_pct, 1),
+        cancellation_risk_pct=round(cancel_pct, 1),
         expected_seasons=expected,
-        reach_season_three_pct=reach_s3,
+        reach_season_three_pct=round(reach_s3, 1),
         comp_sample_size=sample,
         assumptions=[
             Assumption("renewal_definition", "number_of_seasons >= 2",
@@ -248,6 +282,13 @@ def project_series(
                        "Wikidata has no cancellation flag, so a single-season show that has "
                        "ended stands in for one that was not renewed. A single-season show "
                        "still in production is not counted against it."),
+            Assumption("shrinkage", f"prior weight {SHRINKAGE_PRIOR:.0f} comparable titles",
+                       "Rates from a small comparable set are pulled toward the market base "
+                       "rate. Five single-season comps do not prove a 0% renewal rate."),
+            Assumption("market_baseline", base_renewal,
+                       "Percentage of this market that returns for a second season. In "
+                       "single-season markets such as Japanese terrestrial drama, not "
+                       "returning is the standard shape and is not scored as a failure."),
             Assumption("no_viewership_data", True,
                        "Platforms do not publish viewing figures, so renewal outcomes stand in "
                        "for audience performance."),
@@ -312,28 +353,89 @@ def score_film(projection: FilmProjection, comps: list[dict], budget_usd: int,
 
 def score_series(projection: SeriesProjection, comps: list[dict],
                  benchmark: Optional[dict]) -> Score:
+    """Score television against the norm of the market it is made for.
+
+    Judging every show on "does it come back" scores Japanese television as a
+    catastrophe. Japanese drama is commissioned by the cour: a ten-episode
+    single season is the standard shape, not a cancellation. Measured on this
+    catalogue, 0 of 47 Japanese drama/comedy series returned for a second
+    season - so an absolute renewal score marks every Japanese project 4/100
+    before anyone reads the script.
+
+    The market baseline is therefore the yardstick. Returning for a second
+    season in a market where almost nobody does is exceptional; not returning
+    in that market is Tuesday. Where no baseline is available the absolute
+    numbers are used, and the report says which was applied.
+    """
+    baseline = None          # share of this market that returns for season 2
+    cancel_baseline = None   # share of this market that stops after season 1
+    if benchmark and benchmark.get("sample_size", 0) >= 12:
+        value = benchmark.get("pct_returned_after_s1")
+        if value is not None:
+            baseline = float(value)
+        stopped = benchmark.get("pct_did_not_return")
+        if stopped is not None:
+            cancel_baseline = float(stopped)
+
     evidence = _band(projection.comp_sample_size, 2, 12)
-    renewal = _band(projection.renewal_probability_pct, 20.0, 80.0)
-    longevity = _band(projection.expected_seasons, 1.0, 4.0)
-    survival = 1.0 - _band(projection.cancellation_risk_pct, 10.0, 60.0)
-    # Wikidata carries review scores for films but almost never for series, so
-    # television is scored on outcomes alone rather than on a field that would
-    # be empty for every row.
+    market_seasons = float((benchmark or {}).get("avg_seasons") or 0.0)
+    if market_seasons >= 1.0:
+        # A 1.2-season run is strong in a market that averages 1.1 and weak in
+        # one that averages 3. Absolute season counts cannot tell those apart.
+        longevity_abs = _band(projection.expected_seasons / market_seasons, 0.7, 1.6)
+    else:
+        longevity_abs = _band(projection.expected_seasons, 1.0, 4.0)
+
+    if baseline is not None and baseline >= 5.0:
+        # Enough of this market renews that renewal means something here.
+        renewal = _band(projection.renewal_probability_pct / baseline, 0.4, 1.6)
+        # Compare stopping against how often this market stops, not against how
+        # often it renews. Those are different rates and mixing them scored an
+        # ordinary show as a disaster.
+        reference = cancel_baseline if cancel_baseline and cancel_baseline > 0 else 100.0 - baseline
+        survival = 1.0 - _band(projection.cancellation_risk_pct / max(reference, 1.0), 0.6, 1.8)
+        basis = (f"relative to this market: {baseline:.1f}% return for season 2, "
+                 f"{reference:.1f}% stop after one")
+    elif baseline is not None:
+        # A single-season market. Returning is a bonus, never returning is
+        # normal, so the score leans on how long the run is and how well the
+        # comparable set was received rather than on renewal at all.
+        renewal = 0.5 + 0.5 * _band(projection.renewal_probability_pct, 0.0, 20.0)
+        survival = 0.7
+        basis = ("market renews almost never (baseline "
+                 f"{baseline:.1f}%), so renewal is not treated as a failure signal")
+    else:
+        renewal = _band(projection.renewal_probability_pct, 20.0, 80.0)
+        survival = 1.0 - _band(projection.cancellation_risk_pct, 10.0, 60.0)
+        basis = "absolute, no market baseline available"
+
+    # Episode count relative to what this market actually orders.
+    order_fit = 0.5
+    if benchmark and benchmark.get("avg_episodes"):
+        market_episodes = float(benchmark["avg_episodes"])
+        if market_episodes > 0:
+            gap = abs(projection.episodes - market_episodes) / market_episodes
+            order_fit = 1.0 - _band(gap, 0.2, 1.2)
+
     components = {
-        "renewal_likelihood": round(renewal, 3),
-        "cancellation_safety": round(survival, 3),
-        "longevity": round(longevity, 3),
+        "renewal_vs_market": round(renewal, 3),
+        "continuation_safety": round(survival, 3),
+        "longevity": round(longevity_abs, 3),
+        "order_fit": round(order_fit, 3),
         "evidence_strength": round(evidence, 3),
     }
     weights = {
-        "renewal_likelihood": 0.38,
-        "cancellation_safety": 0.28,
-        "longevity": 0.22,
-        "evidence_strength": 0.12,
+        "renewal_vs_market": 0.30,
+        "continuation_safety": 0.22,
+        "longevity": 0.18,
+        "order_fit": 0.16,
+        "evidence_strength": 0.14,
     }
     raw = sum(components[k] * w for k, w in weights.items())
     value = int(round(raw * 100))
-    return Score(value=value, verdict=_verdict(value), components=components)
+    score = Score(value=value, verdict=_verdict(value), components=components)
+    score.components["_basis"] = basis  # carried through to the memo
+    return score
 
 
 def _verdict(value: int) -> str:
