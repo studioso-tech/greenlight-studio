@@ -20,6 +20,7 @@ from app.cost import BudgetExceeded, CostMeter
 from app.embeddings import embed_one
 from app.scoring import (
     FilmProjection,
+    budget_band,
     SeriesProjection,
     project_film,
     project_series,
@@ -74,6 +75,27 @@ def _numbers(projection, score) -> dict:
     return {"projection": projection.to_dict(), "score": score.to_dict()}
 
 
+def _band_benchmark(proposal: Proposal, brief) -> dict:
+    """Outcomes for this genre at this budget. The heart of the What-if."""
+    from app.store import queries
+
+    if proposal.mode != "film":
+        payload = queries.genre_benchmark(
+            mode="series",
+            genre=getattr(brief, "primary_genre", None) or (brief or {}).get("primary_genre"),
+        )
+    else:
+        payload = queries.genre_benchmark(
+            mode="film",
+            genre=getattr(brief, "primary_genre", None) or (brief or {}).get("primary_genre"),
+            budget_band_usd=budget_band(proposal.budget_usd),
+        )
+    rows = payload.get("rows") or []
+    row = dict(rows[0]) if rows else {}
+    row["_elapsed_ms"] = payload.get("elapsed_ms")
+    return row
+
+
 def _evidence(ctx: RequestContext) -> dict:
     """Only the fields a memo may quote. Embeddings and full synopses stay out."""
     keep_film = ("title", "title_ja", "release_year", "genres", "original_language",
@@ -124,7 +146,11 @@ async def run_analysis(material: str, proposal: Proposal) -> dict:
                 )
                 ctx.comps = payload.get("rows") or []
 
-            projection, score = _project_and_score(proposal, ctx.comps, ctx.benchmark)
+            # The analyst may or may not have benchmarked the right budget band.
+            # The projection depends on it, so make sure we have one.
+            benchmark = _band_benchmark(proposal, brief) or ctx.benchmark
+            projection, score = _project_and_score(proposal, ctx.comps, benchmark)
+            ctx.benchmark = benchmark
             numbers = _numbers(projection, score)
             evidence = _evidence(ctx)
 
@@ -167,22 +193,35 @@ async def run_analysis(material: str, proposal: Proposal) -> dict:
 
 
 def recompute(previous: dict, proposal: Proposal) -> dict:
-    """What-if: re-run the maths on evidence we already have.
+    """What-if: move a lever, re-derive the verdict.
 
-    No model call, no database call. This is why the sliders can be live.
+    One ClickHouse query, no model call. Changing the budget changes which
+    films the projection is compared against, so the band has to be re-read -
+    that is the whole point, and it is also the moment the database's speed is
+    visible to a human hand on a slider.
     """
+    from types import SimpleNamespace
+
     started = time.perf_counter()
     comps = previous.get("evidence", {}).get("comparable_titles", [])
-    benchmark = previous.get("evidence", {}).get("segment_benchmark", {})
     if not comps:
         raise ValueError("Nothing to recompute: the original analysis has no comparable set.")
+
+    brief = SimpleNamespace(**(previous.get("brief") or {}))
+    benchmark = _band_benchmark(proposal, brief)
+    db_ms = benchmark.get("_elapsed_ms") or 0.0
+    if not benchmark.get("sample_size"):
+        benchmark = previous.get("evidence", {}).get("segment_benchmark", {})
+
     projection, score = _project_and_score(proposal, comps, benchmark)
     return {
         "request_id": previous.get("request_id"),
         "mode": proposal.mode,
         "proposal": proposal.__dict__,
         **_numbers(projection, score),
-        "recomputed_in_ms": round((time.perf_counter() - started) * 1000, 3),
+        "budget_band_usd": budget_band(proposal.budget_usd) if proposal.mode == "film" else None,
+        "band_sample_size": benchmark.get("sample_size"),
+        "clickhouse_ms": round(float(db_ms), 2),
+        "total_ms": round((time.perf_counter() - started) * 1000, 2),
         "model_calls": 0,
-        "database_calls": 0,
     }

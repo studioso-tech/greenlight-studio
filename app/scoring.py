@@ -93,32 +93,82 @@ def _quantile(values: list[float], q: float) -> float:
     return ordered[lo] * (1 - frac) + ordered[hi] * frac
 
 
+def budget_band(budget_usd: int) -> list[int]:
+    """The band of comparable budgets around a proposal.
+
+    Plus or minus 40%, which is roughly the range within which two films are
+    financed and sold the same way. Narrow enough to mean something, wide enough
+    to still contain a usable sample.
+    """
+    return [int(budget_usd * 0.6), int(budget_usd * 1.4)]
+
+
 def project_film(
     budget_usd: int,
     comps: list[dict],
     benchmark: Optional[dict] = None,
 ) -> FilmProjection:
-    """Scenario band from the realised ROI distribution of the comparable set.
+    """Scenario band for a film at this budget.
 
-    Comparables are weighted over the genre benchmark when there are enough of
-    them, because tone-similar titles predict better than a whole-genre average.
+    Two sources, deliberately combined:
+
+      the budget band - how films of this genre AT THIS BUDGET actually did.
+        This is what makes the budget matter. A $25m film and a $200m film face
+        different odds of the same multiple, and only a budget-matched sample
+        shows that.
+
+      the tone comparables - how films that resemble THIS ONE actually did.
+        This is what makes the subject matter, and it is the half a generic
+        genre average throws away.
+
+    Neither alone is honest. The band ignores what the film is about; the comps
+    ignore what it costs.
     """
-    roi = _roi_values(comps)
-    source = "comparable titles"
-    if len(roi) < 4 and benchmark:
-        source = "genre benchmark"
-        for key, q in (("p25_roi_multiple", 0.25), ("median_roi_multiple", 0.5), ("p75_roi_multiple", 0.75)):
-            if benchmark.get(key) is not None:
-                roi.append(float(benchmark[key]))
+    comp_roi = _roi_values(comps)
+    band_roi: list[float] = []
+    band_sample = 0
+    if benchmark:
+        band_sample = int(benchmark.get("sample_size") or 0)
+        for key in ("p25_roi_multiple", "median_roi_multiple", "p75_roi_multiple"):
+            value = benchmark.get(key)
+            if value is not None:
+                band_roi.append(float(value))
 
-    if not roi:
+    if not comp_roi and not band_roi:
         raise ValueError("No ROI evidence available: cannot project without comparables.")
 
-    bear, base, bull = _quantile(roi, 0.20), _quantile(roi, 0.50), _quantile(roi, 0.85)
+    def blended(q: float) -> float:
+        parts, weights = [], []
+        if comp_roi:
+            parts.append(_quantile(comp_roi, q))
+            weights.append(0.5 if band_roi and band_sample >= 8 else 1.0)
+        if band_roi and band_sample >= 8:
+            parts.append(_quantile(band_roi, q))
+            weights.append(0.5 if comp_roi else 1.0)
+        elif band_roi and not comp_roi:
+            parts.append(_quantile(band_roi, q))
+            weights.append(1.0)
+        total = sum(weights) or 1.0
+        return sum(p * w for p, w in zip(parts, weights)) / total
+
+    bear, base, bull = blended(0.20), blended(0.50), blended(0.85)
     break_even_gross = int(budget_usd * THEATRICAL_BREAK_EVEN_MULTIPLE)
 
-    recouped = sum(1 for r in roi if r >= THEATRICAL_BREAK_EVEN_MULTIPLE)
-    hit = sum(1 for r in roi if r >= 4.0)
+    # Probability comes from the budget-matched band when there is one, because
+    # "how often does a film like this at this price recoup" is a question about
+    # the price as much as the film.
+    band_hit_rate = benchmark.get("pct_hit") if benchmark else None
+    if band_hit_rate is not None and band_sample >= 8:
+        break_even_pct = float(band_hit_rate)
+        hit_pct = float(benchmark.get("pct_recouped_budget") or 0.0)
+        sample = band_sample
+        source = f"{band_sample} films of this genre in this budget band"
+    else:
+        recouped = sum(1 for r in comp_roi if r >= THEATRICAL_BREAK_EVEN_MULTIPLE)
+        break_even_pct = round(100 * recouped / len(comp_roi), 1) if comp_roi else 0.0
+        hit_pct = round(100 * sum(1 for r in comp_roi if r >= 4.0) / len(comp_roi), 1) if comp_roi else 0.0
+        sample = len(comp_roi)
+        source = f"{len(comp_roi)} tone-comparable titles"
 
     return FilmProjection(
         budget_usd=budget_usd,
@@ -129,17 +179,26 @@ def project_film(
         bear_roi=round(bear, 2),
         base_roi=round(base, 2),
         bull_roi=round(bull, 2),
-        probability_break_even_pct=round(100 * recouped / len(roi), 1),
-        probability_hit_pct=round(100 * hit / len(roi), 1),
-        comp_sample_size=len(roi),
+        probability_break_even_pct=round(break_even_pct, 1),
+        probability_hit_pct=round(hit_pct, 1),
+        comp_sample_size=sample,
         assumptions=[
             Assumption("break_even_multiple", THEATRICAL_BREAK_EVEN_MULTIPLE,
                        "Worldwide gross needed per dollar of negative cost: distributor keeps "
                        f"{DISTRIBUTOR_SHARE:.0%} of box office, P&A adds {PA_SPEND_RATIO:.0%} of budget, "
                        "ancillary revenue offsets 0.5x."),
+            Assumption("evidence_source", source,
+                       "Break-even probability is drawn from a budget-matched sample when one "
+                       "exists, and from the tone-comparable set otherwise."),
             Assumption("scenario_quantiles", [0.20, 0.50, 0.85],
                        "Bear / base / bull are the 20th, 50th and 85th percentile of realised "
-                       f"ROI among the {source}."),
+                       "ROI, blending the budget band with the tone comparables."),
+            Assumption("selection_bias", "budgets are not randomly assigned",
+                       "A budget band shows what happened to films a studio was already "
+                       "willing to spend that much on. Films only reach a $150m budget after "
+                       "someone believed in them, so a high band hit-rate partly measures that "
+                       "belief, not the money. Read the band as the company this project would "
+                       "keep, not as a promise about this project."),
             Assumption("inflation", "nominal",
                        "Historical grosses are nominal USD, not adjusted for inflation."),
         ],
