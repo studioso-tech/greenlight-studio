@@ -93,6 +93,23 @@ def _quantile(values: list[float], q: float) -> float:
     return ordered[lo] * (1 - frac) + ordered[hi] * frac
 
 
+# How much a small comparable set is pulled toward the market baseline. Five
+# single-season comps do not establish a 0% renewal rate; they establish that
+# five shows ended, in a market where the base rate is whatever it is. This is
+# the pseudo-count in a standard shrinkage estimate, chosen so a set of five
+# carries slightly less weight than the market and a set of twenty dominates it.
+SHRINKAGE_PRIOR = 8.0
+
+
+def _shrink(observed_pct: float, n: int, baseline_pct: Optional[float]) -> float:
+    """Pull a small-sample rate toward the market base rate."""
+    if baseline_pct is None or n <= 0:
+        return observed_pct
+    successes = observed_pct / 100.0 * n
+    prior = baseline_pct / 100.0 * SHRINKAGE_PRIOR
+    return round(100.0 * (successes + prior) / (n + SHRINKAGE_PRIOR), 1)
+
+
 def budget_band(budget_usd: int) -> list[int]:
     """The band of comparable budgets around a proposal.
 
@@ -154,21 +171,45 @@ def project_film(
     bear, base, bull = blended(0.20), blended(0.50), blended(0.85)
     break_even_gross = int(budget_usd * THEATRICAL_BREAK_EVEN_MULTIPLE)
 
-    # Probability comes from the budget-matched band when there is one, because
-    # "how often does a film like this at this price recoup" is a question about
-    # the price as much as the film.
-    band_hit_rate = benchmark.get("pct_hit") if benchmark else None
-    if band_hit_rate is not None and band_sample >= 8:
-        break_even_pct = float(band_hit_rate)
-        hit_pct = float(benchmark.get("pct_recouped_budget") or 0.0)
+    # Probability blends both kinds of evidence, the same way the scenario band
+    # does. The budget band answers "how often does a film at this price
+    # recoup"; the comparables answer "how often does a film like THIS one".
+    # Neither is the whole question.
+    #
+    # The comparable rate is shrunk toward the band rate because the comparable
+    # set is small - six titles cannot establish a rate on their own. This is
+    # also what makes rejecting a comparable move the number honestly: it
+    # changes the observation, and the observation carries real weight.
+    band_hit_rate = float(benchmark["pct_hit"]) if benchmark and benchmark.get("pct_hit") is not None else None
+    band_recouped = float(benchmark["pct_recouped_budget"]) if benchmark and benchmark.get("pct_recouped_budget") is not None else None
+    usable_band = band_hit_rate is not None and band_sample >= 8
+
+    if comp_roi:
+        observed_be = 100.0 * sum(1 for r in comp_roi if r >= THEATRICAL_BREAK_EVEN_MULTIPLE) / len(comp_roi)
+        observed_hit = 100.0 * sum(1 for r in comp_roi if r >= 4.0) / len(comp_roi)
+    else:
+        observed_be = observed_hit = None
+
+    if observed_be is not None and usable_band:
+        break_even_pct = _shrink(observed_be, len(comp_roi), band_hit_rate)
+        hit_pct = _shrink(observed_hit, len(comp_roi), band_recouped)
+        sample = len(comp_roi)
+        source = (f"{len(comp_roi)} tone-comparable titles, shrunk toward "
+                  f"{band_sample} films in the same budget band")
+    elif usable_band:
+        break_even_pct = band_hit_rate
+        hit_pct = band_recouped or 0.0
         sample = band_sample
         source = f"{band_sample} films of this genre in this budget band"
-    else:
-        recouped = sum(1 for r in comp_roi if r >= THEATRICAL_BREAK_EVEN_MULTIPLE)
-        break_even_pct = round(100 * recouped / len(comp_roi), 1) if comp_roi else 0.0
-        hit_pct = round(100 * sum(1 for r in comp_roi if r >= 4.0) / len(comp_roi), 1) if comp_roi else 0.0
+    elif observed_be is not None:
+        break_even_pct = round(observed_be, 1)
+        hit_pct = round(observed_hit, 1)
         sample = len(comp_roi)
         source = f"{len(comp_roi)} tone-comparable titles"
+    else:
+        break_even_pct = hit_pct = 0.0
+        sample = 0
+        source = "no usable evidence"
 
     return FilmProjection(
         budget_usd=budget_usd,
@@ -203,23 +244,6 @@ def project_film(
                        "Historical grosses are nominal USD, not adjusted for inflation."),
         ],
     )
-
-
-# How much a small comparable set is pulled toward the market baseline. Five
-# single-season comps do not establish a 0% renewal rate; they establish that
-# five shows ended, in a market where the base rate is whatever it is. This is
-# the pseudo-count in a standard shrinkage estimate, chosen so a set of five
-# carries slightly less weight than the market and a set of twenty dominates it.
-SHRINKAGE_PRIOR = 8.0
-
-
-def _shrink(observed_pct: float, n: int, baseline_pct: Optional[float]) -> float:
-    """Pull a small-sample rate toward the market base rate."""
-    if baseline_pct is None or n <= 0:
-        return observed_pct
-    successes = observed_pct / 100.0 * n
-    prior = baseline_pct / 100.0 * SHRINKAGE_PRIOR
-    return round(100.0 * (successes + prior) / (n + SHRINKAGE_PRIOR), 1)
 
 
 def project_series(

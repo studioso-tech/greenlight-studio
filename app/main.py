@@ -87,6 +87,10 @@ class WhatIfRequest(BaseModel):
     per_episode_budget_usd: int = Field(default=3_000_000, ge=10_000, le=100_000_000)
     episodes: int = Field(default=8, ge=1, le=200)
     release_month: int = Field(default=0, ge=0, le=12)
+    excluded_ids: list[str] = Field(
+        default_factory=list, max_length=50,
+        description="Comparable titles the reviewer rejects, by wikidata_id.",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -163,7 +167,7 @@ def whatif(request: WhatIfRequest) -> dict:
         release_month=request.release_month,
     )
     try:
-        return recompute(previous, proposal)
+        return recompute(previous, proposal, request.excluded_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

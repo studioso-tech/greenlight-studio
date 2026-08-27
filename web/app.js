@@ -18,6 +18,7 @@ const state = {
   samples: [],
   analysis: null,
   whatif: null,
+  excluded: new Set(),   // 委員が「比較対象ではない」と外した作品
   busy: false,
 };
 
@@ -199,6 +200,7 @@ async function analyse() {
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
     state.analysis = body;
+    state.excluded.clear();
     render(body);
     buildLevers();
     $("#results").hidden = false;
@@ -247,12 +249,35 @@ function render(a) {
   warn.className = "notice";
   warn.textContent = messages.join(" ");
 
+  renderBreakdown(a);
   drawChart(a);
   renderProjection(a);
   renderComps(a);
   renderTrace(a);
   $("#memo").textContent = a.memo || "";
   renderAssumptions(a);
+}
+
+function renderBreakdown(a) {
+  const host = $("#breakdown");
+  host.innerHTML = "";
+  const components = a.score?.components || {};
+  const entries = Object.entries(components).filter(([k]) => !k.startsWith("_"));
+  if (!entries.length) return;
+
+  const box = el("div", { class: "breakdown" },
+    el("div", { class: "breakdown-title" }, t("panel.breakdown", "What the score is made of")));
+
+  entries.forEach(([key, value]) => {
+    const percent = Math.max(0, Math.min(100, Number(value) * 100));
+    box.append(el("div", { class: "breakdown-row" },
+      el("div", { class: "k" }, t(`comp.${key}`, key.replace(/_/g, " "))),
+      el("div", { class: "breakdown-bar" }, el("span", { style: `width:${percent}%` })),
+      el("div", { class: "v" }, percent.toFixed(0))));
+  });
+
+  if (components._basis) box.append(el("div", { class: "breakdown-basis" }, components._basis));
+  host.append(box);
 }
 
 function metaItem(key, value) {
@@ -341,13 +366,14 @@ function renderComps(a) {
     return;
   }
   const film = a.mode === "film";
+  const useLabel = state.locale === "ja" ? "採用" : "Use";
   const head = film
-    ? ["Title", "Year", "Budget", "Gross", "ROI", "Score", "Distance"]
-    : [state.locale === "ja" ? "作品" : "Title", state.locale === "ja" ? "開始" : "From",
+    ? [useLabel, "Title", "Year", "Budget", "Gross", "ROI", "Score", "Distance"]
+    : [useLabel, state.locale === "ja" ? "作品" : "Title", state.locale === "ja" ? "開始" : "From",
        state.locale === "ja" ? "季" : "Seasons", state.locale === "ja" ? "話数" : "Episodes",
        state.locale === "ja" ? "更新" : "Returned", state.locale === "ja" ? "言語" : "Language", "Distance"];
   table.append(el("thead", {}, el("tr", {}, head.map((h, i) =>
-    el("th", { class: i > 1 ? "num" : "" }, h)))));
+    el("th", { class: i > 2 ? "num" : "" }, h)))));
 
   const body = el("tbody");
   rows.forEach((c) => {
@@ -357,8 +383,24 @@ function renderComps(a) {
          c.has_audience_score ? num(c.audience_score, 0) : "—", num(c.tone_distance, 3)]
       : [title, c.release_year, c.number_of_seasons, c.number_of_episodes || "—",
          c.returned_after_s1 ? "✓" : "—", c.original_language || "—", num(c.tone_distance, 3)];
-    body.append(el("tr", {}, cells.map((v, i) =>
-      el("td", { class: i > 1 ? "num" : "" }, v == null ? "—" : v))));
+
+    // The objection a committee actually makes is "that one is not comparable".
+    // A tool that cannot take it is asking to be believed rather than used.
+    const excluded = state.excluded.has(c.wikidata_id);
+    const box = el("input", { type: "checkbox", class: "use-comp" });
+    box.checked = !excluded;
+    box.disabled = !c.wikidata_id;
+    box.setAttribute("aria-label", `${title}`);
+    box.addEventListener("change", () => {
+      if (box.checked) state.excluded.delete(c.wikidata_id);
+      else state.excluded.add(c.wikidata_id);
+      runWhatIf();
+    });
+
+    const tr = el("tr", { class: excluded ? "comp-excluded" : "" },
+      el("td", {}, box),
+      cells.map((v, i) => el("td", { class: i > 1 ? "num" : "" }, v == null ? "—" : v)));
+    body.append(tr);
   });
   table.append(body);
 }
@@ -443,7 +485,8 @@ function runWhatIf() {
   whatIfTimer = setTimeout(async () => {
     const a = state.analysis;
     if (!a) return;
-    const payload = { request_id: a.request_id, mode: a.mode, ...a.proposal };
+    const payload = { request_id: a.request_id, mode: a.mode, ...a.proposal,
+                      excluded_ids: Array.from(state.excluded) };
     $$("#whatif-levers input[type=range]").forEach((input) => {
       payload[input.dataset.id] = digits(input.value);
     });
@@ -472,10 +515,21 @@ function applyWhatIf(w) {
 
   const meta = $("#whatif-meta");
   meta.innerHTML = "";
+  if (w.comparables_excluded) {
+    const note = $("#warnings");
+    note.hidden = false;
+    note.className = "notice";
+    note.textContent = t("comps.excluded_note",
+      "Excluding evidence changes the verdict. That is the point, and the reason it is shown.");
+  }
   meta.append(
     metaItem(t("meta.clickhouse", "ClickHouse"), `${num(w.clickhouse_ms, 0)} ms`),
     metaItem("Model calls", String(w.model_calls)),
-    w.band_sample_size ? metaItem(t("field.sample", "Sample"), commas(w.band_sample_size)) : null,
+    metaItem(t("panel.comps", "Comparables"),
+      w.comparables_excluded
+        ? `${w.comparables_used} (−${w.comparables_excluded})`
+        : String(w.comparables_used ?? "")),
+    w.band_sample_size ? metaItem(t("field.budget_band", "Band"), commas(w.band_sample_size)) : null,
     w.budget_band_usd
       ? metaItem(t("field.budget_band", "Budget band"),
           `${usd(w.budget_band_usd[0])}–${usd(w.budget_band_usd[1])}`) : null,

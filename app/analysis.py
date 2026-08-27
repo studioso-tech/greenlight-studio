@@ -101,10 +101,10 @@ def _band_benchmark(proposal: Proposal, brief) -> dict:
 
 def _evidence(ctx: RequestContext) -> dict:
     """Only the fields a memo may quote. Embeddings and full synopses stay out."""
-    keep_film = ("title", "title_ja", "release_year", "genres", "original_language",
+    keep_film = ("wikidata_id", "title", "title_ja", "release_year", "genres", "original_language",
                  "budget_usd", "revenue_usd", "roi_multiple", "audience_score",
                  "has_audience_score", "tone_distance")
-    keep_series = ("title", "title_ja", "release_year", "genres", "original_language",
+    keep_series = ("wikidata_id", "title", "title_ja", "release_year", "genres", "original_language",
                    "number_of_seasons", "number_of_episodes", "networks",
                    "returned_after_s1", "did_not_return", "still_running", "tone_distance")
     keep = keep_film if ctx.mode == "film" else keep_series
@@ -195,20 +195,32 @@ async def run_analysis(material: str, proposal: Proposal) -> dict:
     return result
 
 
-def recompute(previous: dict, proposal: Proposal) -> dict:
-    """What-if: move a lever, re-derive the verdict.
+def recompute(previous: dict, proposal: Proposal,
+              excluded_ids: Optional[list[str]] = None) -> dict:
+    """What-if: move a lever or reject a comparable, then re-derive the verdict.
 
     One ClickHouse query, no model call. Changing the budget changes which
     films the projection is compared against, so the band has to be re-read -
     that is the whole point, and it is also the moment the database's speed is
     visible to a human hand on a slider.
+
+    excluded_ids is the argument a committee actually makes. "That title is not
+    comparable" is the most common objection in the room, and a tool that
+    cannot accept it is asking to be believed rather than used.
     """
     from types import SimpleNamespace
 
     started = time.perf_counter()
-    comps = previous.get("evidence", {}).get("comparable_titles", [])
-    if not comps:
+    all_comps = previous.get("evidence", {}).get("comparable_titles", [])
+    if not all_comps:
         raise ValueError("Nothing to recompute: the original analysis has no comparable set.")
+
+    rejected = set(excluded_ids or [])
+    comps = [c for c in all_comps if c.get("wikidata_id") not in rejected]
+    if not comps:
+        raise ValueError(
+            "Every comparable title was excluded. Keep at least one, or run a new analysis."
+        )
 
     brief = SimpleNamespace(**(previous.get("brief") or {}))
     benchmark = _band_benchmark(proposal, brief)
@@ -224,6 +236,9 @@ def recompute(previous: dict, proposal: Proposal) -> dict:
         **_numbers(projection, score),
         "budget_band_usd": budget_band(proposal.budget_usd) if proposal.mode == "film" else None,
         "band_sample_size": benchmark.get("sample_size"),
+        "comparables_used": len(comps),
+        "comparables_excluded": len(all_comps) - len(comps),
+        "excluded_ids": sorted(rejected),
         "clickhouse_ms": round(float(db_ms), 2),
         "total_ms": round((time.perf_counter() - started) * 1000, 2),
         "model_calls": 0,

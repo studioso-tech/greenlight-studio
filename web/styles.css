@@ -383,3 +383,33 @@ footer {
 }
 
 footer a { color: var(--navy-soft); }
+
+
+/* ---------- score breakdown ---------- */
+/* A single number invites the reader to stop thinking. The parts are shown so
+   the verdict can be argued with rather than accepted. */
+
+.breakdown { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+.breakdown-title {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--navy-soft); margin-bottom: 8px;
+}
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) 1fr 42px;
+  gap: 10px; align-items: center; padding: 3px 0; font-size: 12.5px;
+}
+
+.breakdown-row .k { color: var(--muted); }
+.breakdown-bar { height: 6px; border-radius: 3px; background: rgba(47,62,70,.09); overflow: hidden; }
+.breakdown-bar span { display: block; height: 100%; border-radius: 3px; background: var(--navy-soft); }
+.breakdown-row .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--navy); font-weight: 600; }
+.breakdown-basis { margin-top: 8px; font-size: 11.5px; color: var(--muted); font-style: italic; }
+
+/* ---------- rejected comparables ---------- */
+
+tr.comp-excluded td { opacity: .38; text-decoration: line-through; }
+tr.comp-excluded td:first-child { opacity: 1; text-decoration: none; }
+input.use-comp { width: auto; margin: 0; accent-color: var(--navy); }
