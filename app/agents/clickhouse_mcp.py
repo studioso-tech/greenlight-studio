@@ -138,12 +138,44 @@ def build_toolset(tool_filter: Optional[list[str]] = None):
 
 
 def describe() -> dict:
-    """Reported on /api/health so the integration is visible, not asserted."""
+    """Reported on /api/health so the integration is visible, not asserted.
+
+    This used to report installed=True whenever the interpreter existed on
+    disk, and it did exactly that while the app could not import `mcp` and was
+    silently falling back to the direct client. Health that reports wiring
+    which is not wired is worse than no health check, so this now says whether
+    the toolset actually built.
+    """
     python = mcp_python()
+    if python is None:
+        return {
+            "official_server": "mcp-clickhouse",
+            "status": "not installed",
+            "usable": False,
+            "interpreter": None,
+            "detail": "no interpreter found for the MCP environment",
+        }
+
+    # shared_toolset() caches, so this is the same object the agents get - not
+    # a separate probe that could succeed where the real path fails.
+    try:
+        import mcp  # noqa: F401
+    except ImportError as exc:
+        return {
+            "official_server": "mcp-clickhouse",
+            "status": "unusable",
+            "usable": False,
+            "interpreter": str(python),
+            "detail": f"the app cannot speak MCP: {exc}",
+        }
+
+    toolset = shared_toolset()
     return {
         "official_server": "mcp-clickhouse",
-        "installed": python is not None,
-        "interpreter": str(python) if python else None,
+        "status": "ready" if toolset is not None else "failed to start",
+        "usable": toolset is not None,
+        "interpreter": str(python),
         "tools": ALLOWED_TOOLS,
         "write_access": False,
+        "detail": None if toolset is not None else "see logs for the startup error",
     }
