@@ -33,7 +33,7 @@ logger = logging.getLogger("greenlight.api")
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
-WEB_BUILD = ROOT / "web" / "out"
+WEB = ROOT / "web"
 
 app = FastAPI(
     title="Greenlight Studio",
@@ -179,8 +179,10 @@ async def _startup() -> None:
 # static frontend
 # --------------------------------------------------------------------------
 
-if WEB_BUILD.exists():
-    app.mount("/", StaticFiles(directory=str(WEB_BUILD), html=True), name="web")
+if WEB.exists():
+    # No build step: the page is plain HTML, CSS and JS, so there is nothing
+    # between the source and what a judge loads.
+    app.mount("/", StaticFiles(directory=str(WEB), html=True), name="web")
 else:
     @app.get("/")
     def index() -> JSONResponse:

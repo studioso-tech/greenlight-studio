@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greenlight Studio</title>
+<meta name="description" content="Decide with the record, not the room. Screenplay and series-bible risk analysis over a real catalogue, in ClickHouse.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231B4965'/><circle cx='16' cy='16' r='6' fill='%23E0A96D'/></svg>">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="wordmark">Greenlight Studio</div>
+    <div class="tagline" data-i18n="app.tagline">Decide with the record, not the room</div>
+    <div class="seg" id="mode-toggle" role="group" aria-label="Mode">
+      <button data-mode="film" aria-pressed="true" data-i18n="mode.film">Film</button>
+      <button data-mode="series" aria-pressed="false" data-i18n="mode.series">Series</button>
+    </div>
+    <div class="seg" id="locale-toggle" role="group" aria-label="Language">
+      <button data-locale="en" aria-pressed="true">EN</button>
+      <button data-locale="ja" aria-pressed="false">日本語</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ------------------------------------------------ input -->
+  <section>
+    <div class="card">
+      <h2 data-i18n="input.material">Screenplay, treatment or series bible</h2>
+      <div class="samples" id="samples"></div>
+      <label class="field">
+        <textarea id="material" spellcheck="false"
+          data-i18n-placeholder="input.material.hint"
+          placeholder="Paste the material. A logline is enough to start."></textarea>
+      </label>
+
+      <div id="film-fields">
+        <label class="field">
+          <span data-i18n="input.budget">Production budget</span>
+          <input type="text" id="budget" inputmode="numeric" value="25,000,000">
+        </label>
+      </div>
+
+      <div id="series-fields" class="hidden">
+        <div class="row">
+          <label class="field">
+            <span data-i18n="input.per_episode">Budget per episode</span>
+            <input type="text" id="per-episode" inputmode="numeric" value="3,000,000">
+          </label>
+          <label class="field">
+            <span data-i18n="input.episodes">Episodes</span>
+            <input type="text" id="episodes" inputmode="numeric" value="8">
+          </label>
+        </div>
+      </div>
+
+      <label class="field">
+        <span data-i18n="input.release_month">Target release month</span>
+        <select id="release-month"></select>
+      </label>
+
+      <button class="primary" id="run" data-i18n="action.analyze">Run the committee</button>
+      <div class="notice" id="input-note" hidden></div>
+    </div>
+
+    <div class="card" id="whatif-card" hidden>
+      <h2 data-i18n="panel.whatif">Move a lever</h2>
+      <div id="whatif-levers"></div>
+      <div class="meta-strip" id="whatif-meta"></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------ results -->
+  <section id="results" hidden>
+    <div class="card">
+      <div class="verdict-head">
+        <div class="score-dial" id="dial"><span id="score">—</span></div>
+        <div>
+          <div class="verdict-label" id="verdict">—</div>
+          <div id="verdict-title" style="color:var(--muted);font-size:13px"></div>
+        </div>
+      </div>
+      <div class="meta-strip" id="run-meta"></div>
+      <div class="notice" id="warnings" hidden></div>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="panel.projection">Projection</h2>
+      <div id="chart"></div>
+      <div class="stat-grid" id="projection-stats" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2><span data-i18n="panel.comps">Comparable titles</span><span class="count" id="comps-count"></span></h2>
+      <div class="table-scroll"><table id="comps"></table></div>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="panel.trace">What the agents did</h2>
+      <div id="trace"></div>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="panel.memo">The memo</h2>
+      <div class="memo" id="memo"></div>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="panel.assumptions">Assumptions</h2>
+      <div id="assumptions"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span data-i18n="note.sources">Catalogue built from Wikidata (CC0) and English Wikipedia (CC BY-SA 4.0).</span>
+  <span data-i18n="note.nominal">Figures are nominal USD, not inflation adjusted.</span>
+  <span id="catalogue-line"></span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
