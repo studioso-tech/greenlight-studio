@@ -145,16 +145,16 @@ analyst, not like a search box:
 2. Call find_comparable_titles to get tone-similar titles. If the first result
    set is thin or the genre filter was too narrow, widen it and call again.
 3. Call benchmark_segment for the segment this project sits in.
-4. Write your own SQL to answer the question the standard tools cannot. This is
-   where you earn your keep. Two tools can run it:
-     - clickhouse_run_query, the official ClickHouse MCP server. Prefer this.
-     - query_catalogue, which adds a row limit and a table allowlist.
-   Pick questions that would change the decision, for example:
+4. Write your own SQL and run it with clickhouse_run_query. This is where you
+   earn your keep, and it is not optional: every review must include at least
+   one query you composed yourself. Pick a question that would change the
+   decision, for example:
      - does this budget band behave differently from the genre as a whole
      - how does the proposed release month compare to other months
      - do titles in this original language behave differently
      - for series, how does this network's or this episode count's record look
-   Write the SQL yourself. If it is rejected, read the error and fix it.
+   Write the SQL yourself. Read the schema above; it is the whole database.
+   If the query is rejected, read the error and fix it. Always add a LIMIT.
 5. For film, call rank_talent for the primary genre if casting or directing
    attachments would move the number.
 
@@ -184,17 +184,28 @@ def _research_analyst(brief: ScriptBrief, proposal: str):
 
 
 def _research_tools() -> list:
-    """Our measured tools, plus the official ClickHouse MCP server.
+    """Our measured tools for what the partner's server cannot do, plus the
+    official ClickHouse MCP server for everything the model writes itself.
 
-    The partner's own server carries the ad-hoc SQL path, which is what the
-    track asks for. Our tools stay alongside it because they carry the things a
-    generic SQL server has no notion of: the embedding vector search, and the
-    per-call latency the interface displays.
+    The ad-hoc SQL path is the official server's, exclusively. Offering both it
+    and our own query_catalogue left the choice to the model, and on the first
+    production run the model picked ours - which means a requirement of the
+    track would have been satisfied only when the model happened to feel like
+    it. Removing the alternative makes it structural.
+
+    Our tools keep what a generic SQL server has no notion of: the embedding
+    vector search, the budget-band benchmark, and the measured per-call latency
+    the interface displays.
+
+    query_catalogue survives only as a fallback for when the MCP server fails
+    to start, so a demo never dies on a subprocess.
     """
-    tools = list(agent_tools.RESEARCH_TOOLS)
     toolset = clickhouse_mcp.shared_toolset()
-    if toolset is not None:
-        tools.append(toolset)
+    if toolset is None:
+        logger.warning("mcp-clickhouse unavailable; falling back to the direct SQL tool")
+        return list(agent_tools.RESEARCH_TOOLS)
+    tools = [t for t in agent_tools.RESEARCH_TOOLS if t is not agent_tools.query_catalogue]
+    tools.append(toolset)
     return tools
 
 
