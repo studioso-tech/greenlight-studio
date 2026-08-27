@@ -36,7 +36,14 @@ ALLOWED_TOOLS = ["list_databases", "list_tables", "run_query"]
 
 
 def mcp_python() -> Optional[Path]:
-    """Interpreter for the isolated MCP environment, if it was created."""
+    """Interpreter for the isolated MCP environment, if it was created.
+
+    In the container the environment lives outside the project, so the path is
+    passed in; locally it sits in .venv-mcp next to the source.
+    """
+    override = os.getenv("GREENLIGHT_MCP_PYTHON")
+    if override and Path(override).exists():
+        return Path(override)
     for candidate in (MCP_VENV / "Scripts" / "python.exe", MCP_VENV / "bin" / "python"):
         if candidate.exists():
             return candidate

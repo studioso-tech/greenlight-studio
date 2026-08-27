@@ -1,106 +1,224 @@
-# 🎬 Greenlight Studio
-> **Autonomous Film ROI & Production Risk Simulator**  
-> *Built for "Agentic Cinema: The Blockbuster Hackathon" (ClickHouse Track)*
+# Greenlight Studio
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Powered by Google Cloud](https://img.shields.io/badge/Google%20Cloud-Gemini%20Enterprise-4285F4)](https://cloud.google.com)
-[![Powered by ClickHouse](https://img.shields.io/badge/ClickHouse-Fast%20OLAP%20%26%20Vector-FFAA00)](https://clickhouse.com)
-[![Studio S.O](https://img.shields.io/badge/Studio-Studio%20S.O-2F3E46)](https://sutekioojisan-so.com)
+**Decide with the record, not the room.**
+
+A greenlight committee in software. Paste a screenplay, a treatment or a series
+bible; a team of Gemini agents investigates a real catalogue of what actually
+happened to comparable films and television, writes its own SQL when the
+standard questions are not the right ones, and returns a memo you can argue
+with — every figure sourced, every assumption stated.
+
+Built for **Agentic Cinema: The Blockbuster Hackathon** — ClickHouse track.
 
 ---
 
-## 💡 Overview & Inspiration
-Greenlighting a \$50M–\$200M blockbuster film is often a high-stakes gamble driven by intuition, siloed opinions, or months of fragmented research. **Greenlight Studio** transforms this uncertainty into data-driven confidence.
+## What it does
 
-By orchestrating **Gemini Enterprise Multi-Agents** connected via **Model Context Protocol (MCP)** to **ClickHouse Cloud**, Greenlight Studio parses raw screenplays and matches them against 50+ years of historical box office, cast performance, and weekly trend metrics in milliseconds.
+A development executive asks three questions about any project: *what is this
+like, what happened to things like it, and what would have to change.* This
+answers all three from evidence rather than from the room.
+
+- **Film** — projected gross against the break-even it has to clear, and how
+  often films of this genre *at this budget* actually cleared it.
+- **Series** — whether it comes back, judged against the market it is made for.
+  A ten-episode single season is a cancellation in Los Angeles and a completed
+  commission in Tokyo, and the score knows the difference.
+- **What if** — move the budget or the episode order and the verdict re-derives
+  from a fresh ClickHouse read, with no model call at all.
+
+---
+
+## Architecture
 
 ```
-[ Screenplay PDF / Text ]
-          │
-          ▼
-┌────────────────────────────────────────────────────────┐
-│  Gemini Enterprise Agent Platform (Studio Head)        │
-│   ├── Script Analyst Agent (Tone, Pacing, VFX Load)    │
-│   ├── Market Comps Agent (Vector Search in 8.7ms)      │
-│   ├── Budget & ROI Agent (Bear/Base/Bull Scenarios)   │
-│   └── Cast & Release Advisor (Casting Synergy)         │
-└───────────────────────┬────────────────────────────────┘
-                        │ MCP Protocol (SQL & Vector)
-                        ▼
-┌────────────────────────────────────────────────────────┐
-│  ⚡ ClickHouse Cloud (Agent's Real-Time Memory)        │
-│   ├── 50-Year Historical Movies & Vector Embeddings   │
-│   ├── Cast & Director ROI Power Scores                │
-│   └── Granular Theatrical Weekly Trajectories         │
-└────────────────────────────────────────────────────────┘
-          │
-          ▼
-[ 📑 Executive Greenlight Dossier Dashboard ]
+  screenplay / treatment / series bible
+                 │
+    ┌────────────▼─────────────┐
+    │ 1. Script Analyst        │  ADK LlmAgent, structured output, no tools
+    │    tone, genre, language │
+    └────────────┬─────────────┘
+                 │  Gemini embedding (768d)
+    ┌────────────▼─────────────────────────────────────┐
+    │ 2. Research Analyst      │  ADK LlmAgent, 5 tools │
+    │                                                   │
+    │   find_comparable_titles  vector search           │
+    │   benchmark_segment       budget-band outcomes    │
+    │   rank_talent             realised director ROI   │
+    │   query_catalogue         ★ SQL the model writes  │
+    │   describe_catalogue      what it may claim       │
+    └────────────┬──────────────────────────────────────┘
+                 │
+    ┌────────────▼─────────────┐
+    │    deterministic Python  │  projection, score, What-if
+    │    (no model call here)  │
+    └────────────┬─────────────┘
+    ┌────────────▼─────────────┐
+    │ 3. Greenlight Writer     │  ADK LlmAgent, English or Japanese
+    └────────────┬─────────────┘
+                 ▼
+         memo + evidence + trace
 ```
 
----
+Everything above runs against **ClickHouse**: a single self-hosted node on
+Compute Engine, reachable only from inside the VPC, holding 25,325 rows with a
+768-dimension Gemini embedding on every title.
 
-## 🌟 Key Features
+### Why the arithmetic is not in the model
 
-1. **Sub-second Vector Similarity & Comps Retrieval**:
-   - Compares 768-dimensional script tone embeddings against thousands of movies in **under 10 milliseconds** using ClickHouse vector distance functions.
-2. **Autonomous Multi-Agent Orchestration**:
-   - 4 specialized agents collaborate asynchronously to dissect story structure, forecast financial outcomes, and stress-test budgets.
-3. **Probabilistic ROI Simulation**:
-   - Generates Bear, Base, and Bull gross projections with break-even probability distribution curves.
-4. **Data-Driven Casting Recommendations**:
-   - Suggests high-synergy actors and directors based on historical genre-specific multiplier metrics.
-
----
-
-## 🚀 Architecture & Tech Stack
-
-* **AI & Agent Orchestration**: Google Cloud Gemini Enterprise Agent Platform, Vertex AI, FastMCP
-* **Database & Analytical Memory**: ClickHouse Cloud (OLAP Engine + Vector Search)
-* **Backend**: Python, FastMCP Server, FastAPI
-* **Frontend**: Next.js 14 (App Router), Tailwind CSS, Recharts, shadcn/ui
+The model decides *what to look up* and *how to explain it*. It never computes
+a number. Every figure in the memo is calculated in Python from rows ClickHouse
+returned, which means the prose and the chart cannot disagree, the same input
+always yields the same verdict, and the What-if sliders re-run in milliseconds
+without another model call.
 
 ---
 
-## 🛠️ Quick Start
+## Runtime use of the partner's product
 
-### 1. Prerequisites
-- Python 3.10+
-- Node.js 18+
-- ClickHouse Cloud Account (or Local Memory Simulator)
+The ClickHouse track requires runtime use *via the official MCP server*. Both
+paths are live:
 
-### 2. Backend Setup
+| Path | Where | What it does |
+|---|---|---|
+| `mcp-clickhouse` (official) | `app/agents/clickhouse_mcp.py` | launched as a child process over stdio, exposed to ADK as tools, read-only |
+| `clickhouse-connect` | `app/store/clickhouse.py` | vector search and the measured per-query latency the UI displays |
+
+`mcp-clickhouse` pins `fastmcp` 2.x while this project runs 3.x, so it lives in
+its own virtualenv and is spoken to as a separate process. That is the correct
+MCP architecture and it also keeps the dependency fight from reaching the app.
+
+**Check it yourself:** `GET /api/health` reports the live ClickHouse server
+version, the row count of every table, the Gemini backend and project, and
+whether the official MCP server is installed. It reports what is wired up, not
+what this README claims.
+
+---
+
+## The catalogue
+
+Built from **Wikidata (CC0)** and **English Wikipedia (CC BY-SA 4.0)**.
+
+| Table | Rows | Coverage |
+|---|---|---|
+| `movies_historical` | 2,719 | 1921–2026, 34 languages. Every row records a budget **and** a box-office gross in USD; titles missing either were dropped. |
+| `series_historical` | 20,836 | 1937–2027, 123 languages. 48% returned for a second season, 44% did not. |
+| `talent_analytics` | 1,770 | Directors and actors with 2+ credits in one genre. |
+
+Those numbers are written by the ingest into `data/manifest.json` and shown in
+the page footer, so the interface can only claim coverage the data has.
+
+**Why not a commercial film database.** The obvious source requires certifying
+that use is strictly personal and that the data will not be used in any
+business environment. This is submitted under a company name and runs at a
+public URL, so that certification could not be made honestly. Wikidata is CC0
+and restricts neither feeding the text to a model nor running the result inside
+a business.
+
+The catalogue is **not committed to this repository**; it is rebuilt from
+source (see below), which is also how the licences are respected.
+
+---
+
+## Running it
+
+### Prerequisites
+
+- Python 3.13
+- A ClickHouse instance (Cloud or self-hosted) — `infra/clickhouse-startup.sh`
+  brings up the single-node configuration this project uses
+- Google Cloud project with Vertex AI enabled, and `gcloud auth application-default login`
+
+### Setup
+
 ```bash
-cd backend
+python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
 
-# Generate realistic datasets and verify MCP pipeline
-python test_pipeline.py
+# The official ClickHouse MCP server, deliberately isolated
+python -m venv .venv-mcp
+.venv-mcp/bin/pip install mcp-clickhouse==0.4.1
 
-# Start FastMCP Server
-python mcp_server/server.py
+cp .env.example .env      # then fill in ClickHouse host/password and the GCP project
 ```
 
-### 3. Frontend Setup (Coming in Phase 2)
+### Build the catalogue
+
+Roughly 40 minutes end to end, most of it Wikipedia and embedding calls. Every
+stage caches to `data/_cache`, so an interruption costs only the stage it was in.
+
 ```bash
-cd frontend
-npm install
-npm run dev
+python -m ingest.wikidata films     # Wikidata + Wikipedia -> data/*.jsonl
+python -m ingest.wikidata series
+python -m ingest.wikidata talent
+python -m ingest.wikidata embed     # Gemini embeddings, about $1.80
+python -m ingest.wikidata load      # into ClickHouse
+```
+
+### Run
+
+```bash
+python -m uvicorn app.main:app --port 8080
+```
+
+Then open http://localhost:8080 and click one of the sample projects.
+
+### Tests
+
+```bash
+python -m tests.test_guardrails
 ```
 
 ---
 
-## 👥 Creator & Team
+## Cost and runaway protection
 
-* **Studio S.O (スタジオ・エスオー)**
-  * **Founder & AI Lead**: Hisayuki Tsue (津江 久幸)
-  * **Devpost**: [@studioso928](https://devpost.com/studioso928)
-  * **GitHub**: [@studioso-tech](https://github.com/studioso-tech)
-  * **Website**: [https://sutekioojisan-so.com](https://sutekioojisan-so.com)
-  * **Email**: studioso@sutekioojisan-so.com
+An agent with tools can loop: call a tool, dislike the answer, call it again
+with almost the same arguments, forever. Six independent ceilings sit in front
+of every model call and every tool call, through ADK's `before_model` and
+`before_tool` hooks:
+
+| Ceiling | Default |
+|---|---|
+| Spend per request | $0.25, enforced by a meter that prices every call |
+| Wall clock | 90 s, with `asyncio.wait_for` as the outer backstop |
+| Model calls | 26 per request |
+| Tool calls | 16 per request, 5 per individual tool |
+| Identical repeated calls | 2 — the signature of a loop |
+| SQL result rows | 200, added to any query that omits a `LIMIT` |
+
+Tripping a ceiling does not raise. The model is told to answer with the
+evidence it already has, and the trip is recorded in the trace shown on the
+page — visible rather than silent. ClickHouse enforces its own limits too
+(15 s per query, 5,000 rows, 1.5 GB), so a query that gets past the application
+guard still cannot take the database down.
+
+A typical full analysis: **20–40 seconds, about $0.02.**
 
 ---
 
-## 📜 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## What this does not do
+
+- **It does not know what a film will earn.** It reports what comparable films
+  earned and how often they cleared break-even. Those are different claims.
+- **Budgets are not randomly assigned.** A high hit rate in the $150M band
+  partly measures the belief that got those films funded, not the money. The
+  report says so on every projection.
+- **Figures are nominal USD**, not inflation adjusted.
+- **Japanese film coverage is thin** — 20 titles, because Wikidata rarely
+  records budgets for Japanese cinema. Japanese *television* is well covered at
+  346 series, which is why the Japanese interface is genuinely useful for
+  series work and honest about its limits for film.
+- **No viewership data exists publicly**, so renewal outcomes stand in for
+  audience performance on the series side.
+
+---
+
+## Licence and attribution
+
+MIT — see [LICENSE](LICENSE).
+
+Catalogue data from [Wikidata](https://www.wikidata.org) (CC0 1.0) and
+[Wikipedia](https://en.wikipedia.org) (CC BY-SA 4.0). This project is not
+endorsed by or affiliated with either.
+
+Built by [Studio S.O](https://sutekioojisan-so.com).
