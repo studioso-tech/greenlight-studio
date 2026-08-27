@@ -22,6 +22,7 @@ from typing import Any, Literal, Optional
 from google.genai import types as genai_types
 from pydantic import BaseModel, Field
 
+from app.agents import clickhouse_mcp
 from app.agents import tools as agent_tools
 from app.agents.context import RequestContext
 from app.config import settings
@@ -144,9 +145,11 @@ analyst, not like a search box:
 2. Call find_comparable_titles to get tone-similar titles. If the first result
    set is thin or the genre filter was too narrow, widen it and call again.
 3. Call benchmark_segment for the segment this project sits in.
-4. Use query_catalogue to answer the question the standard tools cannot. This is
-   where you earn your keep. Pick questions that would change the decision, for
-   example:
+4. Write your own SQL to answer the question the standard tools cannot. This is
+   where you earn your keep. Two tools can run it:
+     - clickhouse_run_query, the official ClickHouse MCP server. Prefer this.
+     - query_catalogue, which adds a row limit and a table allowlist.
+   Pick questions that would change the decision, for example:
      - does this budget band behave differently from the genre as a whole
      - how does the proposed release month compare to other months
      - do titles in this original language behave differently
@@ -175,9 +178,24 @@ def _research_analyst(brief: ScriptBrief, proposal: str):
             brief_json=brief.model_dump_json(indent=2),
             proposal=proposal,
         ),
-        tools=list(agent_tools.RESEARCH_TOOLS),
+        tools=_research_tools(),
         generate_content_config=_config(2048),
     )
+
+
+def _research_tools() -> list:
+    """Our measured tools, plus the official ClickHouse MCP server.
+
+    The partner's own server carries the ad-hoc SQL path, which is what the
+    track asks for. Our tools stay alongside it because they carry the things a
+    generic SQL server has no notion of: the embedding vector search, and the
+    per-call latency the interface displays.
+    """
+    tools = list(agent_tools.RESEARCH_TOOLS)
+    toolset = clickhouse_mcp.shared_toolset()
+    if toolset is not None:
+        tools.append(toolset)
+    return tools
 
 
 _WRITER_INSTRUCTION = """

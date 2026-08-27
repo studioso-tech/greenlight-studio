@@ -82,6 +82,30 @@ def server_env() -> dict[str, str]:
     return env
 
 
+_TOOLSET = None
+_TOOLSET_TRIED = False
+
+
+def shared_toolset():
+    """One MCP server process for the whole app, not one per request.
+
+    ADK keeps the stdio session alive on the toolset, so building it per agent
+    would spawn a child process on every analysis. Cached, and a failure to
+    start is logged once and then degrades to the direct client rather than
+    failing the request.
+    """
+    global _TOOLSET, _TOOLSET_TRIED
+    if _TOOLSET_TRIED:
+        return _TOOLSET
+    _TOOLSET_TRIED = True
+    try:
+        _TOOLSET = build_toolset()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("could not start mcp-clickhouse: %s", exc)
+        _TOOLSET = None
+    return _TOOLSET
+
+
 def build_toolset(tool_filter: Optional[list[str]] = None):
     """ADK toolset backed by the official server. None if it is not installed."""
     python = mcp_python()

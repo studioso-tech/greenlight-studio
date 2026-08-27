@@ -28,6 +28,9 @@ from app.cost import BudgetExceeded
 
 logger = logging.getLogger("greenlight.guardrails")
 
+# ADK prefixes MCP tools with the toolset's tool_name_prefix.
+MCP_TOOL_PREFIX = "clickhouse"
+
 
 @dataclass
 class Limits:
@@ -49,6 +52,45 @@ class Limits:
                    max_identical_calls=1, deadline_seconds=30)
 
 
+def _read_mcp_response(response) -> tuple[int, Optional[str]]:
+    """Row count and error out of an MCP tool result.
+
+    mcp-clickhouse answers with the rows as a JSON string nested inside the MCP
+    envelope, so a naive look for response["rows"] finds nothing and the trace
+    would report every query as returning zero rows. Showing a wrong number is
+    worse than showing none.
+    """
+    if not isinstance(response, dict):
+        return 0, None
+
+    error = None
+    if response.get("isError"):
+        error = "the MCP server reported an error"
+
+    payload = None
+    structured = response.get("structuredContent")
+    if isinstance(structured, dict):
+        payload = structured.get("result")
+    if payload is None:
+        content = response.get("content")
+        if isinstance(content, list) and content:
+            first = content[0]
+            payload = first.get("text") if isinstance(first, dict) else None
+
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            return 0, error
+    if isinstance(payload, dict):
+        rows = payload.get("rows")
+        if isinstance(rows, list):
+            return len(rows), error
+        if payload.get("error"):
+            return 0, str(payload["error"])[:200]
+    return 0, error
+
+
 class RunawayGuard:
     """One instance per request. Not thread-safe by design: one request, one loop."""
 
@@ -61,6 +103,9 @@ class RunawayGuard:
         self.per_tool: Counter[str] = Counter()
         self.signatures: Counter[str] = Counter()
         self.trips: list[str] = []
+        # Start times for tools that record themselves. Tools reached through
+        # the MCP server do not go through our wrapper, so the guard times them.
+        self._started_at: dict[str, float] = {}
 
     # -- helpers ---------------------------------------------------------
 
@@ -168,12 +213,41 @@ class RunawayGuard:
         self.tool_calls += 1
         self.per_tool[name] += 1
         self.signatures[signature] += 1
+        self._started_at[name] = time.perf_counter()
+        return None
+
+    def after_tool(self, tool=None, args=None, tool_context=None, tool_response=None):
+        """Record tools that cannot record themselves.
+
+        Our own tools write their measured ClickHouse latency into the trace as
+        they run. Tools served by the official MCP server are ADK objects we do
+        not wrap, so without this they would run without appearing in the trace
+        the interface shows - and the one thing that interface must not do is
+        hide work that happened.
+        """
+        name = getattr(tool, "name", str(tool))
+        if not name.startswith(MCP_TOOL_PREFIX):
+            return None
+        started = self._started_at.pop(name, None)
+        elapsed = (time.perf_counter() - started) * 1000 if started else 0.0
+        row_count, error = _read_mcp_response(tool_response)
+        self.ctx.record(ToolCall(
+            agent=self.ctx.current_agent,
+            tool=name,
+            arguments={k: v for k, v in (args or {}).items() if k != "embedding"},
+            elapsed_ms=round(elapsed, 2),
+            backend="clickhouse-mcp",
+            row_count=row_count,
+            sql=(args or {}).get("query"),
+            error=error,
+        ))
         return None
 
     def attach(self, agent) -> None:
         """Wire this guard into an ADK agent."""
         agent.before_model_callback = self.before_model
         agent.before_tool_callback = self.before_tool
+        agent.after_tool_callback = self.after_tool
 
 
 class DeadlineExceeded(RuntimeError):
