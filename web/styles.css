@@ -413,3 +413,48 @@ footer a { color: var(--navy-soft); }
 tr.comp-excluded td { opacity: .38; text-decoration: line-through; }
 tr.comp-excluded td:first-child { opacity: 1; text-decoration: none; }
 input.use-comp { width: auto; margin: 0; accent-color: var(--navy); }
+
+
+/* ---------- where the verdict changes ---------- */
+/* The memo says "reduce the budget"; the slider lets you try it. Neither is an
+   answer. This is the answer, and it is clickable. */
+
+.ladder { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ladder-title {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--navy-soft); margin-bottom: 8px;
+}
+
+.rung {
+  display: grid;
+  grid-template-columns: 74px 1fr auto;
+  gap: 9px; align-items: center;
+  width: 100%; text-align: left;
+  border: 0; background: transparent; font: inherit;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+}
+
+.rung:hover { background: rgba(27, 73, 101, .06); }
+.rung[aria-current="true"] { background: rgba(27, 73, 101, .09); }
+.rung-value { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--charcoal); }
+.rung-track { height: 5px; border-radius: 3px; background: rgba(47,62,70,.09); overflow: hidden; }
+.rung-track span { display: block; height: 100%; border-radius: 3px; }
+.rung-verdict { font-size: 11px; white-space: nowrap; font-weight: 600; }
+
+.tipping-note {
+  margin-top: 10px; font-size: 12.5px; color: var(--charcoal);
+  border-left: 2px solid var(--gold); padding-left: 10px; line-height: 1.5;
+}
+
+
+/* ---------- claims linked to their evidence ---------- */
+
+.cited {
+  border-bottom: 1px dotted var(--navy-soft);
+  cursor: pointer;
+}
+
+.cited:hover { background: rgba(224, 169, 109, .22); }
+
+tr.comp-lit td { background: rgba(224, 169, 109, .18); }
+tr.comp-lit { transition: background .2s ease; }

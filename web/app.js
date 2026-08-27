@@ -44,6 +44,11 @@ const digits = (value) => {
 
 const commas = (n) => n.toLocaleString("en-US");
 
+const VERDICT_COLOR = {
+  GREENLIT: "var(--green)", CONDITIONAL: "var(--amber)",
+  RESHAPE: "var(--gold)", PASS: "var(--rust)",
+};
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -203,6 +208,7 @@ async function analyse() {
     state.excluded.clear();
     render(body);
     buildLevers();
+    loadLadder();
     $("#results").hidden = false;
     $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (err) {
@@ -224,10 +230,7 @@ function render(a) {
 
   const dial = $("#dial");
   dial.style.setProperty("--pct", score);
-  dial.style.setProperty("--dial", {
-    GREENLIT: "var(--green)", CONDITIONAL: "var(--amber)",
-    RESHAPE: "var(--gold)", PASS: "var(--rust)",
-  }[verdict] || "var(--navy)");
+  dial.style.setProperty("--dial", VERDICT_COLOR[verdict] || "var(--navy)");
   $("#score").textContent = score;
 
   const label = $("#verdict");
@@ -254,7 +257,7 @@ function render(a) {
   renderProjection(a);
   renderComps(a);
   renderTrace(a);
-  $("#memo").textContent = a.memo || "";
+  renderMemo(a);
   renderAssumptions(a);
 }
 
@@ -397,7 +400,7 @@ function renderComps(a) {
       runWhatIf();
     });
 
-    const tr = el("tr", { class: excluded ? "comp-excluded" : "" },
+    const tr = el("tr", { class: excluded ? "comp-excluded" : "", "data-comp": c.wikidata_id || "" },
       el("td", {}, box),
       cells.map((v, i) => el("td", { class: i > 1 ? "num" : "" }, v == null ? "—" : v)));
     body.append(tr);
@@ -432,6 +435,53 @@ function renderTrace(a) {
         el("pre", { class: "sql" }, step.sql)));
     }
   });
+}
+
+function renderMemo(a) {
+  const host = $("#memo");
+  host.innerHTML = "";
+  const text = a.memo || "";
+  const comps = a.evidence?.comparable_titles || [];
+
+  // The memo says "Arrival cleared 4.07x" and the table below says the same
+  // thing again, and nothing connects them. Marking the titles turns two
+  // statements of the same fact into one claim with its evidence attached.
+  const marks = [];
+  comps.forEach((c) => {
+    [c.title, c.title_ja].filter(Boolean).forEach((name) => {
+      if (name.length < 3) return;
+      let from = 0;
+      for (;;) {
+        const at = text.indexOf(name, from);
+        if (at < 0) break;
+        marks.push({ start: at, end: at + name.length, id: c.wikidata_id });
+        from = at + name.length;
+      }
+    });
+  });
+  marks.sort((x, y) => x.start - y.start || y.end - x.end);
+
+  let cursor = 0;
+  marks.forEach((mark) => {
+    if (mark.start < cursor) return;            // overlapping title, keep the first
+    if (mark.start > cursor) host.append(text.slice(cursor, mark.start));
+    const cited = el("span", { class: "cited", "data-comp": mark.id },
+      text.slice(mark.start, mark.end));
+    cited.addEventListener("click", () => highlightComp(mark.id));
+    cited.addEventListener("mouseenter", () => highlightComp(mark.id, true));
+    host.append(cited);
+    cursor = mark.end;
+  });
+  if (cursor < text.length) host.append(text.slice(cursor));
+}
+
+function highlightComp(id, quiet) {
+  if (!id) return;
+  $$("#comps tbody tr").forEach((tr) => tr.classList.remove("comp-lit"));
+  const row = $$("#comps tbody tr").find((tr) => tr.dataset.comp === id);
+  if (!row) return;
+  row.classList.add("comp-lit");
+  if (!quiet) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function renderAssumptions(a) {
@@ -478,7 +528,76 @@ function buildLevers() {
   $("#whatif-meta").innerHTML = "";
 }
 
+async function loadLadder() {
+  const a = state.analysis;
+  if (!a) return;
+  const host = $("#tipping");
+  host.innerHTML = "";
+  host.append(el("div", { class: "ladder" },
+    el("div", { class: "ladder-title" }, t("panel.tipping", "Where the verdict changes")),
+    el("div", { class: "trace-args" }, t("tipping.loading", "Working out where it turns…"))));
+
+  try {
+    const res = await fetch("/api/levers", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request_id: a.request_id, mode: a.mode, ...a.proposal,
+                             excluded_ids: Array.from(state.excluded) }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
+    renderLadder(body);
+  } catch (err) {
+    host.innerHTML = "";
+    host.append(el("div", { class: "ladder" },
+      el("div", { class: "trace-args trace-error" }, err.message)));
+  }
+}
+
+function renderLadder(ladder) {
+  const host = $("#tipping");
+  host.innerHTML = "";
+  const rungs = ladder.rungs || [];
+  if (!rungs.length) return;
+
+  const box = el("div", { class: "ladder" },
+    el("div", { class: "ladder-title" }, t("panel.tipping", "Where the verdict changes")));
+
+  const isFilm = ladder.mode === "film";
+  rungs.forEach((rung) => {
+    const label = isFilm ? usd(rung.value) : `${rung.value} ep`;
+    const bar = el("div", { class: "rung-track" },
+      el("span", { style: `width:${Math.max(3, rung.score)}%;background:${VERDICT_COLOR[rung.verdict] || "var(--navy)"}` }));
+    const button = el("button", { class: "rung", type: "button" },
+      el("div", { class: "rung-value" }, label + (rung.is_current ? ` · ${t("tipping.current", "now")}` : "")),
+      bar,
+      el("div", { class: "rung-verdict", style: `color:${VERDICT_COLOR[rung.verdict] || "var(--navy)"}` },
+        `${t(`verdict.${rung.verdict}`, rung.verdict)} ${rung.score}`));
+    if (rung.is_current) button.setAttribute("aria-current", "true");
+    // Clicking a rung moves the slider to it: the recommendation and the
+    // control are the same object, not two descriptions of one idea.
+    button.addEventListener("click", () => {
+      const input = $$("#whatif-levers input[type=range]")
+        .find((i) => i.dataset.id === ladder.lever);
+      if (!input) return;
+      input.value = String(rung.value);
+      input.dispatchEvent(new Event("input"));
+      input.dispatchEvent(new Event("change"));
+    });
+    box.append(button);
+  });
+
+  const tp = ladder.tipping_point;
+  box.append(el("div", { class: "tipping-note" },
+    tp
+      ? t("tipping.at", "At {value} this becomes {verdict}.")
+          .replace("{value}", isFilm ? usd(tp.value) : `${tp.value} episodes`)
+          .replace("{verdict}", t(`verdict.${tp.verdict}`, tp.verdict))
+      : t("tipping.none", "The verdict does not change anywhere along this lever.")));
+  host.append(box);
+}
+
 let whatIfTimer = null;
+let lastExcludedCount = 0;
 
 function runWhatIf() {
   clearTimeout(whatIfTimer);
@@ -499,6 +618,10 @@ function runWhatIf() {
       if (!res.ok) throw new Error(body.detail || `HTTP ${res.status}`);
       state.whatif = body;
       applyWhatIf(body);
+      if (body.comparables_excluded !== lastExcludedCount) {
+        lastExcludedCount = body.comparables_excluded;
+        loadLadder();   // 証拠が変われば変化点も変わる
+      }
     } catch (err) {
       $("#whatif-meta").textContent = err.message;
     }
@@ -511,7 +634,7 @@ function applyWhatIf(w) {
   const delta = w.score.value - base.score.value;
 
   render(merged);   // memo and trace stay as they were; the numbers move
-  $("#memo").textContent = base.memo || "";
+  renderMemo(base);
 
   const meta = $("#whatif-meta");
   meta.innerHTML = "";

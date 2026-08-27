@@ -195,6 +195,98 @@ async def run_analysis(material: str, proposal: Proposal) -> dict:
     return result
 
 
+# The one lever a committee actually pulls, and the steps worth showing on it.
+# Multiples of what was proposed, so the ladder is meaningful at any scale.
+_FILM_STEPS = (0.25, 0.4, 0.6, 0.8, 1.0, 1.3, 1.8, 2.5)
+_EPISODE_STEPS = (6, 8, 10, 12, 16, 22)
+
+
+def lever_ladder(previous: dict, proposal: Proposal,
+                 excluded_ids: Optional[list[str]] = None) -> dict:
+    """Where along the lever the verdict actually changes.
+
+    A memo that says "reduce the budget by five to ten million" and a slider
+    that lets you try it are the same thought in two places, and neither is
+    quite an answer. This computes the answer: the point at which this project
+    stops being a Reshape and starts being something else.
+
+    Every step is the same deterministic model, re-read from ClickHouse. It
+    costs one query per rung and no model call at all.
+    """
+    from types import SimpleNamespace
+
+    started = time.perf_counter()
+    all_comps = previous.get("evidence", {}).get("comparable_titles", [])
+    rejected = set(excluded_ids or [])
+    comps = [c for c in all_comps if c.get("wikidata_id") not in rejected]
+    if not comps:
+        raise ValueError("Nothing to evaluate: every comparable title was excluded.")
+
+    brief = SimpleNamespace(**(previous.get("brief") or {}))
+    current_verdict = None
+    rungs: list[dict] = []
+    db_ms = 0.0
+
+    if proposal.mode == "film":
+        base = proposal.budget_usd
+        candidates = [(int(base * m), m) for m in _FILM_STEPS]
+    else:
+        base = proposal.episodes
+        candidates = [(n, n / base if base else 1.0) for n in _EPISODE_STEPS]
+
+    for value, multiple in candidates:
+        step = Proposal(**{**proposal.__dict__})
+        if proposal.mode == "film":
+            step.budget_usd = value
+        else:
+            step.episodes = value
+        benchmark = _band_benchmark(step, brief)
+        db_ms += float(benchmark.get("_elapsed_ms") or 0.0)
+        try:
+            projection, score = _project_and_score(step, comps, benchmark)
+        except ValueError:
+            continue
+        is_current = abs(multiple - 1.0) < 1e-9
+        if is_current:
+            current_verdict = score.verdict
+        rungs.append({
+            "value": value,
+            "multiple": round(multiple, 2),
+            "is_current": is_current,
+            "score": score.value,
+            "verdict": score.verdict,
+            "sample_size": benchmark.get("sample_size"),
+            "probability_pct": (projection.probability_break_even_pct
+                                if proposal.mode == "film"
+                                else projection.renewal_probability_pct),
+        })
+
+    # The nearest rung in each direction whose verdict differs from today's.
+    tipping = None
+    if current_verdict:
+        current_index = next((i for i, r in enumerate(rungs) if r["is_current"]), None)
+        if current_index is not None:
+            for offset in range(1, len(rungs)):
+                for index in (current_index - offset, current_index + offset):
+                    if 0 <= index < len(rungs) and rungs[index]["verdict"] != current_verdict:
+                        tipping = rungs[index]
+                        break
+                if tipping:
+                    break
+
+    return {
+        "mode": proposal.mode,
+        "lever": "budget_usd" if proposal.mode == "film" else "episodes",
+        "current_verdict": current_verdict,
+        "rungs": rungs,
+        "tipping_point": tipping,
+        "comparables_used": len(comps),
+        "clickhouse_ms": round(db_ms, 2),
+        "total_ms": round((time.perf_counter() - started) * 1000, 2),
+        "model_calls": 0,
+    }
+
+
 def recompute(previous: dict, proposal: Proposal,
               excluded_ids: Optional[list[str]] = None) -> dict:
     """What-if: move a lever or reject a comparable, then re-derive the verdict.

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from app import i18n
 from app.agents import clickhouse_mcp
-from app.analysis import Proposal, recompute, run_analysis
+from app.analysis import Proposal, lever_ladder, recompute, run_analysis
 from app.config import settings
 from app.cost import BudgetExceeded
 from app.llm import llm_status, warm_up
@@ -168,6 +168,27 @@ def whatif(request: WhatIfRequest) -> dict:
     )
     try:
         return recompute(previous, proposal, request.excluded_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/levers")
+def levers(request: WhatIfRequest) -> dict:
+    """Where the verdict changes along the one lever that matters."""
+    previous = request.analysis
+    if previous is None and request.request_id:
+        previous = _RECENT.get(request.request_id)
+    if previous is None:
+        raise HTTPException(status_code=404, detail="No prior analysis found.")
+    proposal = Proposal(
+        mode=request.mode,
+        budget_usd=request.budget_usd,
+        per_episode_budget_usd=request.per_episode_budget_usd,
+        episodes=request.episodes,
+        release_month=request.release_month,
+    )
+    try:
+        return lever_ladder(previous, proposal, request.excluded_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
