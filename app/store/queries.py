@@ -120,13 +120,19 @@ gross in US dollars; everything else was dropped)
   role_type String,                          -- 'director' | 'actor'
   primary_genre String, credits UInt16,
   avg_roi_multiple Float32, median_roi_multiple Float32,
-  avg_revenue_usd UInt64, hit_rate_pct Float32
+  avg_revenue_usd UInt64, hit_rate_pct Float32,
+  death_year UInt16                          -- 0 = no death date on Wikidata
 
 Notes:
   - Money is nominal USD, not inflation adjusted. Say so if it matters.
   - audience_score is absent for most series; filter on has_audience_score = 1.
   - cosineDistance(embedding, [...]) gives tone similarity; smaller is closer.
   - Do not select the embedding column; it is 768 floats per row.
+  - Never recommend casting someone with death_year > 0 - filter it out
+    yourself in ad-hoc talent queries. death_year = 0 means "no death date on
+    record", not "confirmed living": Wikidata's coverage is incomplete, so
+    say the name comes from a historical box-office ranking, not a
+    confirmation that the person is currently working.
 """.strip()
 
 
@@ -263,11 +269,16 @@ def talent_leaderboard(
     if isinstance(store, LocalStore):
         return store.talent(genre=genre, role_type=role_type, limit=limit, min_credits=min_credits)
 
+    # death_year > 0 means Wikidata has a recorded date of death - exclude
+    # them outright. This tool exists to answer "who should we cast", and a
+    # dead director is not a castable answer to that question, however good
+    # their historical ROI was.
     sql = f"""
         SELECT name, role_type, primary_genre, credits,
                avg_roi_multiple, median_roi_multiple, avg_revenue_usd, hit_rate_pct
         FROM {schema.TALENT}
         WHERE role_type = %(role)s AND primary_genre = %(genre)s AND credits >= %(minc)s
+              AND death_year = 0
         ORDER BY median_roi_multiple DESC, avg_revenue_usd DESC
         LIMIT %(lim)s
     """

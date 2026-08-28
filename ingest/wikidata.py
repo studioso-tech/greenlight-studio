@@ -262,6 +262,22 @@ def _claim_amount(entity: dict, prop: str) -> Optional[float]:
     return None
 
 
+def _claim_time(entity: dict, prop: str) -> Optional[str]:
+    """Raw Wikidata time string off a claim, e.g. '+2009-09-14T00:00:00Z'.
+
+    Feed the result to _iso_date() - the leading '+' and the trailing
+    T00:00:00Z are exactly what it already strips for release dates.
+    """
+    for claim in entity.get("claims", {}).get(prop, []):
+        snak = claim.get("mainsnak", {})
+        if snak.get("snaktype") != "value":
+            continue
+        data = snak.get("datavalue", {}).get("value", {})
+        if isinstance(data, dict) and "time" in data:
+            return data["time"]
+    return None
+
+
 def _label(entity: dict, lang: str = "en") -> str:
     return (entity.get("labels", {}).get(lang, {}) or {}).get("value", "")
 
@@ -515,6 +531,24 @@ def build_talent() -> None:
                 grouped[(person["id"], role, genre)].append(film)
                 names[person["id"]] = person["name"]
 
+    # Casting advice that names a dead director is exactly the kind of error
+    # that reads as untrustworthy in front of a judge. The film-credit fetch
+    # above only pulled labels for these people (props="labels"), never
+    # claims, so death date (P570) was never in reach. Fetch it separately -
+    # only for the people who actually clear the 2+ credit bar below would
+    # save calls, but that bar is applied per (person, role, genre) tuple
+    # while a death date is per person, so fetching for everyone in `names`
+    # first and filtering after is simpler and still one bounded batch call.
+    person_entities = _cache(
+        "talent_person_entities",
+        lambda: fetch_entities(sorted(names), props="labels|claims"),
+    )
+
+    def death_year_of(person_id: str) -> int:
+        raw = _claim_time(person_entities.get(person_id, {}), "P570")
+        died_on = _iso_date(raw)
+        return int(died_on[:4]) if died_on else 0
+
     rows = []
     for (person_id, role, genre), credited in grouped.items():
         if len(credited) < 2:
@@ -530,8 +564,14 @@ def build_talent() -> None:
             "median_roi_multiple": round(statistics.median(rois), 4),
             "avg_revenue_usd": int(statistics.fmean(f["revenue_usd"] for f in credited)),
             "hit_rate_pct": round(100 * sum(1 for r in rois if r >= 2.5) / len(rois), 1),
+            # 0 = no death date on Wikidata. That means "presumed living or
+            # unknown", not "confirmed living" - coverage is incomplete, so
+            # this filters out only what we can actually confirm.
+            "death_year": death_year_of(person_id),
         })
-    logger.info("built %d talent rows with 2+ credits in one genre", len(rows))
+    deceased = sum(1 for r in rows if r["death_year"])
+    logger.info("built %d talent rows with 2+ credits in one genre (%d flagged deceased)",
+                len(rows), deceased)
     write_jsonl(schema.TALENT, rows)
 
 

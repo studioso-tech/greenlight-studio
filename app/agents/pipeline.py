@@ -230,8 +230,12 @@ The evidence rows the analyst pulled:
 
 Write the memo with these sections, using the section names in {language_name}:
 
-VERDICT - one paragraph. State the verdict ({verdict}) and the score
-({score}/100) and say plainly what it rests on.
+VERDICT - one paragraph. The committee's decision is: {verdict_directive}
+(internal code: {verdict}). State that decision plainly, in your own words, in
+{language_name} - do not just translate the English code above. Then give the
+score ({score}/100) and say plainly what the decision rests on. If the
+decision is to decline the project, do not use approval language ("approve",
+"greenlit", "承認") anywhere in this paragraph.
 
 WHY - three to five bullets. Each bullet must cite a specific comparable title
 with its real figures, or a specific statistic from the analyst's queries. A
@@ -253,10 +257,25 @@ Rules:
 
 _LANGUAGE_NAME = {"en": "English", "ja": "Japanese"}
 
+# The scorer's internal codes (scoring.py:_verdict) are Hollywood shorthand,
+# not plain English - "PASS" means "we are passing on this / declining it",
+# not "it passed". Handed to the writer model bare, "PASS" reads as approval
+# about as often as it reads as decline, and the memo's own VERDICT paragraph
+# ends up arguing the opposite of what the summary table says. Spelling the
+# decision out removes the ambiguity instead of relying on the model to know
+# the jargon.
+_VERDICT_DIRECTIVE = {
+    "GREENLIT": "approve this project as proposed",
+    "CONDITIONAL": "approve this project only if the conditions below are met",
+    "RESHAPE": "do not approve this project as submitted - it needs to be restructured first",
+    "PASS": "decline this project - do not greenlight it",
+}
+
 
 def _greenlight_writer(brief, proposal, findings, numbers, evidence, locale: str):
     from google.adk.agents import LlmAgent
 
+    verdict_code = numbers.get("score", {}).get("verdict", "")
     return LlmAgent(
         name="greenlight_writer",
         model=adk_model(settings().writer_model),
@@ -268,7 +287,8 @@ def _greenlight_writer(brief, proposal, findings, numbers, evidence, locale: str
             findings=findings,
             numbers_json=json.dumps(numbers, ensure_ascii=False, indent=2, default=str),
             evidence_json=json.dumps(evidence, ensure_ascii=False, indent=2, default=str)[:12000],
-            verdict=numbers.get("score", {}).get("verdict", ""),
+            verdict=verdict_code,
+            verdict_directive=_VERDICT_DIRECTIVE.get(verdict_code, verdict_code),
             score=numbers.get("score", {}).get("value", ""),
         ),
         generate_content_config=_config(2048),

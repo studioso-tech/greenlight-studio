@@ -93,6 +93,7 @@ def ddl() -> list[str]:
             median_roi_multiple Float32,
             avg_revenue_usd     UInt64,
             hit_rate_pct        Float32,
+            death_year          UInt16 DEFAULT 0,  -- 0 = no death date on Wikidata
             ingested_at         DateTime DEFAULT now()
         )
         ENGINE = ReplacingMergeTree(ingested_at)

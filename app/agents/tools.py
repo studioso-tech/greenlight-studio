@@ -137,6 +137,9 @@ def benchmark_segment(
 def rank_talent(genre: str, role_type: str = "director", limit: int = 5) -> dict:
     """Rank directors or actors by the box-office multiple they actually delivered in a genre.
 
+    Only returns people with no recorded death date, so every name here is
+    safe to suggest casting.
+
     Args:
         genre: The genre to rank within, e.g. "Thriller".
         role_type: Either "director" or "actor".

@@ -240,6 +240,7 @@ class LocalStore:
             if r.get("role_type") == role_type
             and r.get("primary_genre") == genre
             and (r.get("credits") or 0) >= min_credits
+            and not r.get("death_year")
         ]
         rows.sort(key=lambda r: (r.get("median_roi_multiple") or 0, r.get("avg_revenue_usd") or 0), reverse=True)
         return QueryResult(rows[:limit], (time.perf_counter() - t0) * 1000,
