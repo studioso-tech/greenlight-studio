@@ -46,6 +46,8 @@ out/
 .DS_Store
 Thumbs.db
 infra/.ch_password
+media/demo_takes_raw/
+media/demo_takes/
 data/*.jsonl
 data/_cache/
 data/*.json

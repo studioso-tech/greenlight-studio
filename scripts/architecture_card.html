@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; width: 1920px; height: 1080px; }
+  body {
+    background: #eef2f2;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #1a2b3c;
+    box-sizing: border-box;
+    position: relative;
+  }
+  .eyebrow {
+    position: absolute; top: 44px; left: 60px;
+    font-size: 13px; font-weight: 700; letter-spacing: 1.5px; color: #b5453a;
+    text-transform: uppercase;
+  }
+  .title {
+    position: absolute; top: 64px; left: 60px;
+    font-size: 30px; font-weight: 600; color: #1a2b3c;
+  }
+  .hr {
+    position: absolute; top: 118px; left: 60px; right: 60px;
+    border-top: 1px solid #d5dede;
+  }
+
+  /* main horizontal spine */
+  .spine {
+    position: absolute; top: 168px; left: 60px; right: 60px;
+    display: flex; align-items: stretch;
+  }
+  .node {
+    background: #ffffff; border: 1px solid #d5dede; border-radius: 10px;
+    padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .node.agent { border-top: 4px solid #1a4d6d; }
+  .node.compute { border-top: 4px solid #4a5a68; }
+  .node-title { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+  .node-sub { font-size: 12px; color: #6a7a88; line-height: 1.5; }
+  .spine-arrow { display: flex; align-items: center; justify-content: center; width: 34px; font-size: 30px; font-weight: 700; color: #4a5a68; }
+  .spine-arrow-label { position: absolute; top: -18px; left: 0; right: 0; text-align: center; font-size: 10px; color: #8a98a0; white-space: nowrap; }
+  .spine-arrow-wrap { position: relative; }
+
+  #n-in    { width: 190px; }
+  #n-1     { width: 230px; }
+  #n-2     { width: 260px; }
+  #n-py    { width: 210px; }
+  #n-3     { width: 230px; }
+  #n-out   { width: 210px; }
+
+  /* right-side branch: ClickHouse */
+  .branch-line {
+    position: absolute; top: 234px; left: 1200px; width: 1px; height: 40px;
+    border-left: 3px dashed #4a5a68;
+  }
+  .branch-arrow-down {
+    position: absolute; top: 268px; left: 1190px; font-size: 22px; font-weight: 700; color: #4a5a68;
+  }
+  .branch {
+    position: absolute; top: 296px; left: 900px; width: 600px;
+    background: #ffffff; border: 1px solid #cfe0da; border-left: 4px solid #2f7a5c;
+    border-radius: 10px; padding: 16px 22px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .branch-title { font-size: 16px; font-weight: 700; color: #1a4d6d; margin-bottom: 6px; }
+  .branch-row { font-size: 13px; color: #3a4a58; line-height: 1.7; }
+  .branch-row b { color: #1a2b3c; }
+
+  /* supporting services band */
+  .services-label {
+    position: absolute; top: 470px; left: 60px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1.2px; color: #8a98a0;
+    text-transform: uppercase;
+  }
+  .conn {
+    position: absolute; top: 262px; height: 236px; width: 1px; border-left: 2px dashed #7a8a92;
+  }
+  .services-row {
+    position: absolute; top: 500px; left: 60px; right: 60px;
+    display: flex; gap: 24px;
+  }
+  .svc {
+    flex: 1; background: #f4f7f7; border: 1px solid #d5dede; border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .svc-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .svc-sub { font-size: 12px; color: #6a7a88; line-height: 1.55; }
+
+  /* engineering notes */
+  .notes {
+    position: absolute; top: 760px; left: 60px; right: 60px;
+    border-top: 1px solid #d5dede; padding-top: 20px;
+  }
+  .notes p { font-size: 14px; color: #4a5a68; line-height: 1.9; margin: 0 0 8px 0; }
+  .notes b { color: #1a2b3c; }
+
+  .foot {
+    position: absolute; bottom: 40px; left: 60px; right: 60px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; color: #8a98a0; font-family: monospace;
+    border-top: 1px solid #d5dede; padding-top: 16px;
+  }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Greenlight Studio</div>
+  <div class="title">Built on Gemini, ADK, and ClickHouse</div>
+  <div class="hr"></div>
+
+  <div class="spine">
+    <div class="node compute" id="n-in">
+      <div class="node-sub">screenplay / treatment /<br>series bible</div>
+    </div>
+    <div class="spine-arrow">→</div>
+    <div class="node agent" id="n-1">
+      <div class="node-title">1&nbsp; Script Analyst</div>
+      <div class="node-sub">ADK LlmAgent · structured output<br>no tools · tone, genre, language</div>
+    </div>
+    <div class="spine-arrow-wrap">
+      <div class="spine-arrow-label">Gemini embedding (768d)</div>
+      <div class="spine-arrow">→</div>
+    </div>
+    <div class="node agent" id="n-2">
+      <div class="node-title">2&nbsp; Research Analyst</div>
+      <div class="node-sub">ADK LlmAgent · decides which of<br>5 tools to call, incl. SQL it writes itself</div>
+    </div>
+    <div class="spine-arrow">→</div>
+    <div class="node compute" id="n-py">
+      <div class="node-title">deterministic Python</div>
+      <div class="node-sub">projection · score · What-if<br><b>no model call here</b></div>
+    </div>
+    <div class="spine-arrow">→</div>
+    <div class="node agent" id="n-3">
+      <div class="node-title">3&nbsp; Greenlight Writer</div>
+      <div class="node-sub">ADK LlmAgent · English or Japanese<br>forbidden to contradict the numbers</div>
+    </div>
+    <div class="spine-arrow">→</div>
+    <div class="node compute" id="n-out">
+      <div class="node-sub">memo + evidence + trace,<br>shown to the committee</div>
+    </div>
+  </div>
+
+  <div class="branch-line"></div>
+  <div class="branch-arrow-down">↓</div>
+  <div class="branch">
+    <div class="branch-title">ClickHouse — reached two ways</div>
+    <div class="branch-row"><b>mcp-clickhouse</b> (official server) — child process over stdio, exposed to ADK as read-only tools</div>
+    <div class="branch-row"><b>clickhouse-connect</b> — vector search + the measured per-query latency shown in the UI</div>
+    <div class="branch-row" style="margin-top:6px;">Single self-hosted node on Compute Engine, VPC-internal only.<br>25,325 rows, every one with a 768-d Gemini embedding.</div>
+  </div>
+
+  <div class="conn" style="left: 170px;"></div>
+  <div class="conn" style="left: 450px;"></div>
+  <div class="conn" style="left: 760px;"></div>
+  <div class="conn" style="left: 1650px;"></div>
+
+  <div class="services-label">Guardrails — six independent ceilings in front of every call</div>
+  <div class="services-row">
+    <div class="svc">
+      <div class="svc-title">Spend meter</div>
+      <div class="svc-sub">$0.25 per request, priced per call before it runs</div>
+    </div>
+    <div class="svc">
+      <div class="svc-title">Wall clock</div>
+      <div class="svc-sub">90s outer timeout via asyncio.wait_for</div>
+    </div>
+    <div class="svc">
+      <div class="svc-title">Call ceilings</div>
+      <div class="svc-sub">26 model calls · 16 tool calls · 5 per tool · 2 identical repeats trips it</div>
+    </div>
+    <div class="svc">
+      <div class="svc-title">ClickHouse limits</div>
+      <div class="svc-sub">15s per query · 5,000 rows · 1.5GB, independent of the app</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p>A tripped ceiling does not raise an error — the model answers with the evidence it already has, and the trip is recorded in the trace shown on the page. <b>A typical full analysis: 20–40 seconds, about $0.02.</b></p>
+    <p>The catalogue is built from <b>Wikidata (CC0)</b> and <b>English Wikipedia (CC BY-SA 4.0)</b>, not a commercial film database — the standard source requires certifying personal-only use, which a company-run public URL cannot honestly claim.</p>
+  </div>
+
+  <div class="foot">
+    <span>Agentic Cinema: The Blockbuster Hackathon — ClickHouse track</span>
+    <span>greenlight-studio-667011739762.us-central1.run.app</span>
+  </div>
+</body>
+</html>
