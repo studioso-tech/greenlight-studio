@@ -201,8 +201,18 @@ def genre_benchmark(
     language: Optional[str] = None,
     min_year: Optional[int] = None,
     budget_band_usd: Optional[list[int]] = None,
+    scripted_only: bool = False,
 ) -> dict:
-    """Distribution of outcomes for a slice of the catalogue."""
+    """Distribution of outcomes for a slice of the catalogue.
+
+    scripted_only (series): restrict to the ordinary scripted-series envelope -
+    no animation, at most six seasons. A market baseline should describe the
+    shows this project competes with, not the animation franchises that share a
+    genre tag and run for decades (Sazae-san is "Family", Detective Conan is
+    "Mystery"). Left in, they lift the Japanese renewal baseline from ~16% past
+    60% and score an ordinary drama as a catastrophe. Only the greenlight score
+    asks for this; the research agent's own benchmark tool still sees everything.
+    """
     store = get_store()
     if isinstance(store, LocalStore):
         return store.benchmark(mode=mode, genre=genre, language=language, min_year=min_year,
@@ -224,6 +234,9 @@ def genre_benchmark(
     if budget_band_usd and mode == "film":
         where.append("budget_usd BETWEEN %(blo)s AND %(bhi)s")
         params["blo"], params["bhi"] = int(budget_band_usd[0]), int(budget_band_usd[1])
+    if mode == "series" and scripted_only:
+        where.append("NOT has(genres, 'Animation')")
+        where.append("number_of_seasons BETWEEN 1 AND 6")
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
     if mode == "film":

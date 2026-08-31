@@ -42,6 +42,11 @@ class Limits:
     max_tool_calls: int = 16           # whole request
     max_calls_per_tool: int = 5        # one tool used over and over
     max_identical_calls: int = 2       # same tool, same arguments - a loop
+    # Model calls held back for the memo writer. The research agent effectively
+    # stops at max_model_calls - writer_reserve, so an agent that investigates
+    # right up to the ceiling can never leave the final step with no budget to
+    # run - which is how a request ends with a computed score but no memo.
+    writer_reserve: int = 4
     deadline_seconds: int = field(default_factory=lambda: settings().agent_timeout_sec)
     max_cost_usd: float = field(default_factory=lambda: settings().max_cost_usd_per_request)
 
@@ -49,7 +54,7 @@ class Limits:
     def strict(cls) -> "Limits":
         """Tighter set for the What-if path, which must stay interactive."""
         return cls(max_model_calls=4, max_tool_calls=6, max_calls_per_tool=3,
-                   max_identical_calls=1, deadline_seconds=30)
+                   max_identical_calls=1, writer_reserve=0, deadline_seconds=30)
 
 
 def _read_mcp_response(response) -> tuple[int, Optional[str]]:
@@ -141,6 +146,7 @@ class RunawayGuard:
                 "max_tool_calls": self.limits.max_tool_calls,
                 "max_calls_per_tool": self.limits.max_calls_per_tool,
                 "max_identical_calls": self.limits.max_identical_calls,
+                "writer_reserve": self.limits.writer_reserve,
                 "deadline_seconds": self.limits.deadline_seconds,
                 "max_cost_usd": self.limits.max_cost_usd,
             },
@@ -158,11 +164,18 @@ class RunawayGuard:
         from google.adk.models.llm_response import LlmResponse
         from google.genai import types as genai_types
 
+        # The research agent stops one reserve short of the hard ceiling, so the
+        # memo writer always has budget to run. Every other agent (the writer
+        # included) is bounded only by the hard ceiling.
+        model_ceiling = self.limits.max_model_calls
+        if self.limits.writer_reserve and self.ctx.current_agent == "research_analyst":
+            model_ceiling = max(1, self.limits.max_model_calls - self.limits.writer_reserve)
+
         reason = None
         if self.elapsed > self.limits.deadline_seconds:
             reason = (f"Time limit reached ({self.limits.deadline_seconds}s).")
-        elif self.model_calls >= self.limits.max_model_calls:
-            reason = (f"Model call limit reached ({self.limits.max_model_calls}).")
+        elif self.model_calls >= model_ceiling:
+            reason = (f"Model call limit reached ({model_ceiling}).")
         elif self.ctx.meter.usd >= self.limits.max_cost_usd:
             reason = (f"Cost ceiling reached (${self.limits.max_cost_usd:.2f}).")
 

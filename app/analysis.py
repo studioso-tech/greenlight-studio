@@ -83,12 +83,19 @@ def _band_benchmark(proposal: Proposal, brief) -> dict:
     language = getattr(brief, "original_language", None)
     if proposal.mode != "film":
         # Language matters more than genre for television: it decides whether
-        # "did not return" means cancelled or simply finished. Fall back to
-        # genre alone if the market slice is too thin to be a baseline.
-        payload = queries.genre_benchmark(mode="series", genre=genre, language=language)
+        # "did not return" means cancelled or simply finished. If the genre
+        # slice for this market is too thin to be a baseline, drop the genre
+        # and keep the market - "all Japanese scripted series" is a truer
+        # yardstick for a Japanese show than "all Family series worldwide",
+        # which renew far more often.
+        payload = queries.genre_benchmark(
+            mode="series", genre=genre, language=language, scripted_only=True
+        )
         rows = payload.get("rows") or []
-        if not rows or (rows[0].get("sample_size") or 0) < 12:
-            payload = queries.genre_benchmark(mode="series", genre=genre)
+        if not rows or (rows[0].get("sample_size") or 0) < 25:
+            payload = queries.genre_benchmark(
+                mode="series", language=language, scripted_only=True
+            )
     else:
         payload = queries.genre_benchmark(
             mode="film", genre=genre, budget_band_usd=budget_band(proposal.budget_usd)
